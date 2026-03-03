@@ -31,5 +31,8 @@
   - mlx-lm = LLM package with model code (github.com/ml-explore/mlx-lm)
   - Source files: mlx_lm/models/[qwen2.py](http://qwen2.py), mlx_lm/[generate.py](http://generate.py), mlx_lm/[utils.py](http://utils.py)
 - Created skills inventory (45 skills across 8 domains)
-- NEXT: Start TASK-001 — environment setup
+- TASK-001 — environment setup - Completed
+- TASK-002 - Download and Run First Model - `first model inference working`
+- `TASK-003: benchmark baseline 53.0 tok/s`
+- Local M4 24gb ram hardware baseline - 336 tokens in 6.3s = 53.0 tok/s
 
