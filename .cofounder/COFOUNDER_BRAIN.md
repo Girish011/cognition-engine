@@ -102,12 +102,12 @@
 
 ## WHAT'S BEEN BUILT
 
-- [x] Architecture research + adversarial critique (50+ papers)
-- [x] 16-week execution plan
-- [x] Co-founder continuity protocol
-- [ ] WEEK 1: MLX inference + hidden state extraction
-- [ ] WEEK 2: Entropy computation + degradation visualization
-- [ ] WEEK 3: CHI score + project skeleton + CLI
+- Architecture research + adversarial critique (50+ papers)
+- 16-week execution plan
+- Co-founder continuity protocol
+- WEEK 1: MLX inference + hidden state extraction
+- WEEK 2: Entropy computation + degradation visualization
+- WEEK 3: CHI score + project skeleton + CLI
 
 ## KEY LEARNINGS
 
@@ -120,4 +120,5 @@
 - 2026-03-03: Model commoditization accelerating. Validates thesis: value is in making models work reliably, not in the model itself.
 - 2026-03-03: Qwen3.5 has "toggle reasoning on/off" — potential free Level 2 intervention (enable thinking mode when CHI drops). Investigate Week 7.
 - 2026-03-03: OpenFang is agent orchestration (40 channels, 27 providers), NOT cognitive monitoring. Not a competitor. Different product category entirely.
+- 2026-03-04: Turkey problem analysis. Our moat (neural-level intervention) is more durable than wrapper/orchestration layers, but not immune. Defensive strategy: publish research + create CHI benchmark standard + build LoRA/steering artifacts that outlive the product. Don't build models from scratch — build the knowledge that makes any model better.
 
