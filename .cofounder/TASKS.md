@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
 ### TASK-006: Verify Hidden States Are Meaningful
 
-**Status:** ⬜ TODO **Do:** Create `scripts/verify_states.py`
+**Status:** ✅ DONE **Do:** Create `scripts/verify_states.py`
 
 Run two very different prompts through TASK-005's code:
 
@@ -207,7 +207,7 @@ Capture hidden states from both at the same layer. Compute cosine similarity bet
 - [ ] TASK-003: Benchmark speed (15 min)
 - [ ] TASK-004: Read mlx-lm source code (2-3 hrs)
 - [ ] TASK-005: Hidden state extraction (4-6 hrs) ← HARDEST
-- [ ] TASK-006: Verify states (1 hr)
+- [x] TASK-006: Verify states (1 hr)
 - [ ] TASK-007: Attention weights (2-3 hrs)
 
 **Total: ~12-16 hours across 3-4 days**
