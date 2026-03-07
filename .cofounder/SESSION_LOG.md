@@ -75,3 +75,12 @@
             out = self.lm_head(out)
   - That final linear mapping from hidden size 3584 → vocab size is where **logits are computed from hidden states**.
 
+## 2026-03-07 (Week 0 — Engine: hidden states)
+
+- Implemented `extract_hidden_states()` in `engine/hidden_states.py`: runs inference and returns `(generated_text, hidden_state_tensor)` with shape `(1, seq_len, hidden_dim)`.
+- MLX has no PyTorch-style `register_forward_hook`: intercept by replacing the layer in the list with a wrapper.
+  - Introduced `_CaptureLayer` wrapper: holds the real layer and a `captured` list; `__call__` runs the layer, appends output, returns it. Set `model.model.layers[layer_idx] = _CaptureLayer(original_layer, captured)` and restore in `finally`.
+- Flow: (1) generate text with `generate()`, (2) build full sequence = prompt tokens + generated tokens, (3) clear `captured`, (4) one forward `model(full_tokens[None], cache=None)` and `mx.eval(...)` so the forward runs, (5) take `captured[0]` as the hidden state for that layer.
+- Bug fix: `mx.eval(x)` evaluates in place and returns `None`. Do not assign: use `mx.eval(hidden)` only; never `hidden = mx.eval(hidden)` or `hidden` becomes `None`.
+- Hidden state shape example: `(1, 15, 3584)` = batch 1, sequence length 15 (prompt + generated), hidden size 3584.
+- `if __name__ == "__main__"`: loads `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`, runs `extract_hidden_states(..., "Write hello world in Python")`, prints generated text and hidden state shape.
