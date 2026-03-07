@@ -1,0 +1,182 @@
+[
+  {
+    "turn": 0,
+    "prompt": "Create a Python class called TaskManager with an __init__ method that stores a l",
+    "response_length": 300,
+    "context_length": 334,
+    "response_entropy_mean": 0.201904296875,
+    "response_entropy_max": 1.833984375,
+    "response_entropy_min": -0.0
+  },
+  {
+    "turn": 1,
+    "prompt": "Add a method add_task(title, priority) that adds a task dict to the list.",
+    "response_length": 300,
+    "context_length": 657,
+    "response_entropy_mean": 0.169189453125,
+    "response_entropy_max": 2.390625,
+    "response_entropy_min": -0.0
+  },
+  {
+    "turn": 2,
+    "prompt": "Add a method get_tasks_by_priority(priority) that filters and returns matching t",
+    "response_length": 300,
+    "context_length": 978,
+    "response_entropy_mean": 0.059478759765625,
+    "response_entropy_max": 1.95703125,
+    "response_entropy_min": 1.895427703857422e-05
+  },
+  {
+    "turn": 3,
+    "prompt": "Add a method complete_task(title) that marks a task as completed.",
+    "response_length": 300,
+    "context_length": 1297,
+    "response_entropy_mean": 0.045623779296875,
+    "response_entropy_max": 1.724609375,
+    "response_entropy_min": 2.6166439056396484e-05
+  },
+  {
+    "turn": 4,
+    "prompt": "Add a method get_statistics() that returns count of total, completed, and pendin",
+    "response_length": 300,
+    "context_length": 1620,
+    "response_entropy_mean": 0.036712646484375,
+    "response_entropy_max": 1.40625,
+    "response_entropy_min": 2.777576446533203e-05
+  },
+  {
+    "turn": 5,
+    "prompt": "Now add due dates to tasks. Modify add_task to accept an optional due_date param",
+    "response_length": 300,
+    "context_length": 1943,
+    "response_entropy_mean": 0.053924560546875,
+    "response_entropy_max": 1.9033203125,
+    "response_entropy_min": 2.1338462829589844e-05
+  },
+  {
+    "turn": 6,
+    "prompt": "Add a method get_overdue_tasks() that returns tasks past their due date.",
+    "response_length": 300,
+    "context_length": 2264,
+    "response_entropy_mean": 0.0283355712890625,
+    "response_entropy_max": 1.14453125,
+    "response_entropy_min": 6.884336471557617e-05
+  },
+  {
+    "turn": 7,
+    "prompt": "Add a method export_to_json(filepath) that saves all tasks to a JSON file.",
+    "response_length": 300,
+    "context_length": 2585,
+    "response_entropy_mean": 0.0181732177734375,
+    "response_entropy_max": 1.185546875,
+    "response_entropy_min": 7.56382942199707e-05
+  },
+  {
+    "turn": 8,
+    "prompt": "Add a method import_from_json(filepath) that loads tasks from a JSON file.",
+    "response_length": 300,
+    "context_length": 2906,
+    "response_entropy_mean": 0.0258026123046875,
+    "response_entropy_max": 0.9365234375,
+    "response_entropy_min": 0.0001914501190185547
+  },
+  {
+    "turn": 9,
+    "prompt": "Add input validation to add_task: title must be non-empty string, priority must ",
+    "response_length": 300,
+    "context_length": 3232,
+    "response_entropy_mean": 0.07208251953125,
+    "response_entropy_max": 1.8974609375,
+    "response_entropy_min": 3.838539123535156e-05
+  },
+  {
+    "turn": 10,
+    "prompt": "Add a method sort_tasks(by='priority', reverse=False) that sorts the task list.",
+    "response_length": 300,
+    "context_length": 3555,
+    "response_entropy_mean": 0.0279998779296875,
+    "response_entropy_max": 1.263671875,
+    "response_entropy_min": 0.0001385211944580078
+  },
+  {
+    "turn": 11,
+    "prompt": "Add a method search_tasks(keyword) that searches task titles and returns matches",
+    "response_length": 2,
+    "context_length": 3577,
+    "response_entropy_mean": 0.079833984375,
+    "response_entropy_max": 0.1539306640625,
+    "response_entropy_min": 0.00579833984375
+  },
+  {
+    "turn": 12,
+    "prompt": "Refactor the class to use a dataclass for individual tasks instead of dicts.",
+    "response_length": 2,
+    "context_length": 3600,
+    "response_entropy_mean": 0.44482421875,
+    "response_entropy_max": 0.8876953125,
+    "response_entropy_min": 0.002063751220703125
+  },
+  {
+    "turn": 13,
+    "prompt": "Add unit tests for add_task, complete_task, and get_statistics methods.",
+    "response_length": 2,
+    "context_length": 3622,
+    "response_entropy_mean": 0.457275390625,
+    "response_entropy_max": 0.70263671875,
+    "response_entropy_min": 0.2120361328125
+  },
+  {
+    "turn": 14,
+    "prompt": "Add error handling: raise custom TaskNotFoundError when completing non-existent ",
+    "response_length": 2,
+    "context_length": 3643,
+    "response_entropy_mean": 0.96923828125,
+    "response_entropy_max": 1.169921875,
+    "response_entropy_min": 0.7685546875
+  },
+  {
+    "turn": 15,
+    "prompt": "Show me the complete, final version of the TaskManager class with all features.",
+    "response_length": 2,
+    "context_length": 3666,
+    "response_entropy_mean": 0.89697265625,
+    "response_entropy_max": 1.78125,
+    "response_entropy_min": 0.0130615234375
+  },
+  {
+    "turn": 16,
+    "prompt": "Now review your implementation. Are there any bugs? Fix them.",
+    "response_length": 28,
+    "context_length": 3712,
+    "response_entropy_mean": 1.3564453125,
+    "response_entropy_max": 5.90234375,
+    "response_entropy_min": 0.00390625
+  },
+  {
+    "turn": 17,
+    "prompt": "Add type hints to every method in the class.",
+    "response_length": 2,
+    "context_length": 3729,
+    "response_entropy_mean": 0.927734375,
+    "response_entropy_max": 1.2734375,
+    "response_entropy_min": 0.58154296875
+  },
+  {
+    "turn": 18,
+    "prompt": "Write a comprehensive docstring for the class and every public method.",
+    "response_length": 48,
+    "context_length": 3795,
+    "response_entropy_mean": 0.982421875,
+    "response_entropy_max": 4.26171875,
+    "response_entropy_min": 0.003894805908203125
+  },
+  {
+    "turn": 19,
+    "prompt": "Create a CLI interface using argparse that wraps the TaskManager.",
+    "response_length": 2,
+    "context_length": 3814,
+    "response_entropy_mean": 0.492919921875,
+    "response_entropy_max": 0.984375,
+    "response_entropy_min": 0.0014467239379882812
+  }
+]

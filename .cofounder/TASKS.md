@@ -286,7 +286,7 @@ The code prompt should have meaningfully lower average entropy than the open-end
 ---
 
 ### TASK-009: Entropy Over a Multi-Turn Conversation
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `scripts/multiturn_entropy.py`
 
 This is the KEY experiment. You're going to:
@@ -730,7 +730,7 @@ if __name__ == "__main__":
 
 ## WEEK 2 CHECKLIST
 - [x] TASK-008: Token-level entropy computation (2-3 hrs)
-- [ ] TASK-009: Multi-turn entropy experiment (3-4 hrs)
+- [x] TASK-009: Multi-turn entropy experiment (3-4 hrs)
 - [ ] TASK-010: Repetition detection — Jaccard (1-2 hrs)
 - [ ] TASK-011: Goal drift detection (1-2 hrs)
 - [ ] TASK-012: Degradation visualization (1-2 hrs)

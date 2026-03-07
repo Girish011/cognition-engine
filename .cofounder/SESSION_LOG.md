@@ -114,3 +114,13 @@
   - 'def fibonacci(n):' mean entropy: **3.3906** (lower)
   - Code prompt has meaningfully lower average entropy than open-ended prompt ✓
 - Git: `TASK-008: token-level entropy computation`
+
+## 2026-03-07 (Week 2 — TASK-009: Multi-turn entropy)
+
+- TASK-009 — Entropy Over a Multi-Turn Conversation — Completed
+- Created `data/` and `scripts/multiturn_entropy.py`: multi-turn coding conversation with entropy at each turn.
+  - Uses TASK_SEQUENCE (20 turns) building a TaskManager class step by step; each turn appends User/Assistant to conversation, generates with `generate()`, then gets logits for full text and computes `response_entropy` (last N tokens, N = response token count).
+  - Results: turn, prompt snippet, response_length, context_length, response_entropy_mean/max/min; prints per-turn stats; saves `data/multiturn_entropy.json`; stops if context_length > 28K.
+- MLX: use `mx.eval()` on entropy then `mean_ent.item()` / `max_ent.item()` / `min_ent.item()` for JSON-serializable scalars.
+- Quick test (3 turns): script runs, entropy printed per turn, result dicts have expected keys. Full 20-turn run: run `python scripts/multiturn_entropy.py` (takes ~10+ min).
+- **data/multiturn_entropy.json check:** 20 turns, valid structure. Context grows 334→3814 tokens (under 28K). Entropy: low early (mean ~0.02–0.20), higher/variable later (e.g. 0.44–1.36); turns 14/16/18 show clear rise. Caveat: from turn 11 onward many responses are 2 tokens (short replies), so entropy there is over few tokens; when model does generate longer (turns 16, 18), mean entropy ~1.0+.
