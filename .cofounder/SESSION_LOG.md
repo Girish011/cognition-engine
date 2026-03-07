@@ -84,3 +84,21 @@
 - Bug fix: `mx.eval(x)` evaluates in place and returns `None`. Do not assign: use `mx.eval(hidden)` only; never `hidden = mx.eval(hidden)` or `hidden` becomes `None`.
 - Hidden state shape example: `(1, 15, 3584)` = batch 1, sequence length 15 (prompt + generated), hidden size 3584.
 - `if __name__ == "__main__"`: loads `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`, runs `extract_hidden_states(..., "Write hello world in Python")`, prints generated text and hidden state shape.
+
+## 2026-03-07 (Week 0 — TASK-006: Verify hidden states)
+
+- TASK-006 — Verify Hidden States Are Meaningful — Completed
+- Created `scripts/verify_states.py`: runs two prompts through `extract_hidden_states()` (layer 16, max_tokens 80).
+  - Prompt A: "Write a Python sorting algorithm"
+  - Prompt B: "Write a poem about the ocean"
+- Averages hidden states over sequence length, then computes cosine similarity between the two (3584-d) vectors.
+- Result: cosine similarity 0.7379 (< 1 → different prompts produced different representations; capture mechanism working).
+- Hidden state shapes observed: A (1, 85, 3584), B (1, 86, 3584); averaged vector shape (3584,).
+
+## 2026-03-07 (Week 0 — TASK-007: Attention weights)
+
+- TASK-007 — Extract Attention Weights (Prep for Week 2) — Completed
+- Created `engine/attention_weights.py`: wraps the self-attention module to capture softmax attention weights (same approach as TASK-005: replace module with wrapper, run forward, restore in `finally`).
+- `_CaptureAttention`: replicates Attention forward (Q/K/V, RoPE, GQA repeat), computes scores → mask → softmax, appends weights to list, then output = weights @ V and o_proj.
+- `extract_attention_weights(model, tokenizer, prompt, layer_idx=16, max_tokens=50)` returns `(generated_text, attention_weights)`; weights shape `(1, n_heads, seq_len, seq_len)`.
+- Manual test: `python engine/attention_weights.py` — output: generated text + **Attention weights shape: (1, 28, 46, 46)** (28 heads, 46 tokens).
