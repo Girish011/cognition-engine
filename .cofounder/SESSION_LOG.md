@@ -124,3 +124,13 @@
 - MLX: use `mx.eval()` on entropy then `mean_ent.item()` / `max_ent.item()` / `min_ent.item()` for JSON-serializable scalars.
 - Quick test (3 turns): script runs, entropy printed per turn, result dicts have expected keys. Full 20-turn run: run `python scripts/multiturn_entropy.py` (takes ~10+ min).
 - **data/multiturn_entropy.json check:** 20 turns, valid structure. Context grows 334→3814 tokens (under 28K). Entropy: low early (mean ~0.02–0.20), higher/variable later (e.g. 0.44–1.36); turns 14/16/18 show clear rise. Caveat: from turn 11 onward many responses are 2 tokens (short replies), so entropy there is over few tokens; when model does generate longer (turns 16, 18), mean entropy ~1.0+.
+
+## 2026-03-07 (Week 2 — TASK-010: Repetition detection)
+
+- TASK-010 — Repetition Detection (Second CHI Signal) — Completed
+- Created `engine/repetition.py`: Jaccard similarity on word n-grams (default trigrams).
+  - `compute_repetition_score(text_a, text_b, n=3)`: word split → trigrams → Jaccard = |A∩B|/|A∪B|; 0.0–1.0.
+  - `compute_self_repetition(text, window_size=100)`: consecutive word-windows, average pairwise Jaccard (high = stuck in loop).
+  - `track_repetition_over_turns(responses)`: Jaccard between consecutive responses; list of length len(responses)-1.
+- Manual test (`python engine/repetition.py`): identical → 1.0; different texts → 0.0; similar code → ~0.18; self-repetition on repeated "word" → 1.0; track over turns smoke test OK.
+- Git: `TASK-010: repetition detection (Jaccard similarity)`
