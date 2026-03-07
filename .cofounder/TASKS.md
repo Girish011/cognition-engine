@@ -14,7 +14,7 @@
 
 ### TASK-001: Environment Setup
 
-**Status:** ⬜ TODO **Do:**
+**Status:** ✅ DONE  **Do:**
 
 ```bash
 cd cognition-engine
@@ -36,7 +36,7 @@ python -c "import mlx_lm; print('mlx_lm OK')"
 
 ### TASK-002: Download and Run First Model
 
-**Status:** ⬜ TODO **Do:** Create `scripts/first_inference.py`:
+**Status:** ✅ DONE  **Do:** Create `scripts/first_inference.py`:
 
 ```python
 from mlx_lm import load, generate
@@ -54,7 +54,7 @@ print(response)
 
 ### TASK-003: Measure Inference Speed
 
-**Status:** ⬜ TODO **Do:** Create `scripts/benchmark.py`:
+**Status:** ✅ DONE  **Do:** Create `scripts/benchmark.py`:
 
 ```python
 import time
@@ -79,7 +79,7 @@ print(f"{tokens} tokens in {elapsed:.1f}s = {tps:.1f} tok/s")
 
 ### TASK-004: Read mlx-lm Source Code (Learning Task — No Code to Write)
 
-**Status:** ⬜ TODO
+**Status:** ✅ DONE 
 
 **⚠️ IMPORTANT: There are TWO separate repos. Don't confuse them:**
 
@@ -102,27 +102,27 @@ ls $(python -c "import os, mlx_lm; print(os.path.dirname(mlx_lm.__file__))")/mod
 **Read these files IN ORDER:**
 
 1. `mlx_lm/models/qwen2.py` → The Qwen2 model architecture
-  - Online: https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/qwen2.py
+  - Online: [https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/qwen2.py](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/models/qwen2.py)
   - Look for: `Qwen2Model`, `Qwen2DecoderLayer`, `Qwen2Attention`
   - Note how `self.model.layers` is a list of transformer decoder layers
   - Note the hidden_size, num_heads, num_layers in the ModelArgs
 2. `mlx_lm/generate.py` → How tokens are generated step by step
-  - Online: https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/generate.py
+  - Online: [https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/generate.py](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/generate.py)
   - Look for: `generate_step()` — this is the core generation loop
   - Note how it calls `model(inputs, cache=cache)` each step
   - Note how logits are converted to token probabilities via sampling
 3. `mlx_lm/utils.py` → How models are loaded from HuggingFace
-  - Online: https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/utils.py
+  - Online: [https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/utils.py](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/utils.py)
   - Look for: `load()` function — this is what you call in your scripts
   - Note how it downloads weights, loads config, builds the model object
 
 **What to understand (write answers in your session log):**
 
-- [ ] How many transformer layers does Qwen2.5-7B have? (look at config)
-- [ ] What is the hidden dimension size? (look at ModelArgs.hidden_size)
-- [ ] Where does self-attention happen? (look at Qwen2Attention class)
-- [ ] How is the KV cache passed through layers? (look at the cache parameter)
-- [ ] Where are logits computed from hidden states? (look at the lm_head)
+- How many transformer layers does Qwen2.5-7B have? (look at config)
+- What is the hidden dimension size? (look at ModelArgs.hidden_size)
+- Where does self-attention happen? (look at Qwen2Attention class)
+- How is the KV cache passed through layers? (look at the cache parameter)
+- Where are logits computed from hidden states? (look at the lm_head)
 
 **Tip:** Open these files in Cursor. Use Cursor's AI to help explain specific functions, but make sure YOU understand the flow, not just the AI.
 
@@ -132,14 +132,14 @@ ls $(python -c "import os, mlx_lm; print(os.path.dirname(mlx_lm.__file__))")/mod
 
 ### TASK-005: Extract Hidden States During Inference ⚠️ HARDEST TASK
 
-**Status:** ⬜ TODO **Do:** Create `engine/hidden_states.py`
+**Status:** ✅ DONE  **Do:** Create `engine/hidden_states.py`
 
 The goal: intercept a transformer layer's output during generation.
 
 **Approach hints** (figure out the details yourself — that's the learning):
 
 - MLX may NOT have PyTorch-style `register_forward_hook()`
-- You may need to monkey-patch a layer's `__call_`_ method
+- You may need to monkey-patch a layer's `__call`__ method
 - Or wrap the layer in a custom class that captures output
 - Look at how `model.model.layers[N]` is structured in qwen2.py
 - The hidden state shape should be something like `(1, seq_len, hidden_dim)`
@@ -192,7 +192,7 @@ Capture hidden states from both at the same layer. Compute cosine similarity bet
 
 ### TASK-007: Extract Attention Weights (Prep for Week 2)
 
-**Status:** ⬜ TODO **Do:** Extend your hidden state approach to also capture attention weights from the self-attention module (`Qwen2Attention` in qwen2.py). Print their shape.
+**Status:** ✅ DONE **Do:** Extend your hidden state approach to also capture attention weights from the self-attention module (`Qwen2Attention` in qwen2.py). Print their shape.
 
 **Hint:** Look at how `Qwen2Attention.__call__()` computes attention. The attention weights are computed before the output projection. You may need to modify or wrap the attention module similarly to TASK-005.
 
@@ -202,13 +202,13 @@ Capture hidden states from both at the same layer. Compute cosine similarity bet
 
 ## WEEK 1 CHECKLIST
 
-- [ ] TASK-001: Environment setup (15 min)
-- [ ] TASK-002: First inference (30 min)
-- [ ] TASK-003: Benchmark speed (15 min)
-- [ ] TASK-004: Read mlx-lm source code (2-3 hrs)
-- [ ] TASK-005: Hidden state extraction (4-6 hrs) ← HARDEST
-- [x] TASK-006: Verify states (1 hr)
-- [ ] TASK-007: Attention weights (2-3 hrs)
+- TASK-001: Environment setup (15 min)
+- TASK-002: First inference (30 min)
+- TASK-003: Benchmark speed (15 min)
+- TASK-004: Read mlx-lm source code (2-3 hrs)
+- TASK-005: Hidden state extraction (4-6 hrs) ← HARDEST
+- TASK-006: Verify states (1 hr)
+- [x] TASK-007: Attention weights (2-3 hrs)
 
 **Total: ~12-16 hours across 3-4 days**
 
