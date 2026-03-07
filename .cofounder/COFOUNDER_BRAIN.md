@@ -95,9 +95,9 @@
 
 ## CURRENT STATUS
 
-- **Week:** 1 of 16
+- **Week:** 2 of 16
 - **Phase:** Phase 0 — Foundations
-- **Current task:** TASK-001
+- **Current task:** TASK-008
 - **Blockers:** None
 
 ## WHAT'S BEEN BUILT
@@ -108,6 +108,12 @@
 - WEEK 1: MLX inference + hidden state extraction
 - WEEK 2: Entropy computation + degradation visualization
 - WEEK 3: CHI score + project skeleton + CLI
+- - WEEK 1: MLX inference + hidden state extraction
+- 53.0 tok/s baseline on M4 Pro 24GB (better than expected)
+- CaptureLayer wrapper for hidden states (no PyTorch hooks in MLX)
+- Attention weight extraction via replicated forward pass
+- Cosine similarity 0.7379 between code vs poetry (capture verified)
+- Hidden state shape: (1, seq_len, 3584), Attention: (1, 28, seq_len, seq_len)
 
 ## KEY LEARNINGS
 
@@ -121,4 +127,9 @@
 - 2026-03-03: Qwen3.5 has "toggle reasoning on/off" — potential free Level 2 intervention (enable thinking mode when CHI drops). Investigate Week 7.
 - 2026-03-03: OpenFang is agent orchestration (40 channels, 27 providers), NOT cognitive monitoring. Not a competitor. Different product category entirely.
 - 2026-03-04: Turkey problem analysis. Our moat (neural-level intervention) is more durable than wrapper/orchestration layers, but not immune. Defensive strategy: publish research + create CHI benchmark standard + build LoRA/steering artifacts that outlive the product. Don't build models from scratch — build the knowledge that makes any model better.
-
+- 2026-03-07: MLX has no forward hooks. Solution: replace layer in model.model.layers[] with CaptureLayer wrapper, restore in finally block.
+- 2026-03-07: mx.eval() returns None — never assign its result. Call mx.eval(tensor)
+  only for side effect.
+- 2026-03-07: 53 tok/s on M4 Pro for 7B Q4 — significantly above 25-40 estimate.
+  Qwen3.5-9B should still be fast enough for production use.
+  

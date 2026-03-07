@@ -208,22 +208,536 @@ Capture hidden states from both at the same layer. Compute cosine similarity bet
 - TASK-004: Read mlx-lm source code (2-3 hrs)
 - TASK-005: Hidden state extraction (4-6 hrs) ← HARDEST
 - TASK-006: Verify states (1 hr)
-- [x] TASK-007: Attention weights (2-3 hrs)
+- TASK-007: Attention weights (2-3 hrs)
 
 **Total: ~12-16 hours across 3-4 days**
 
 ---
 
-## WEEK 2: Entropy + Degradation Visualization
+## WEEK 2: Entropy Computation + Degradation Detection
 
-(Detailed tasks added after Week 1 is complete)
+**Goal:** : Build the measurement system that becomes the foundation of CHI.
+By end of Week 2, you'll have a graph showing EXACTLY where a model degrades.
 
-- TASK-008: Token-level entropy computation
-- TASK-009: Multi-turn entropy tracking (100+ turns)
-- TASK-010: Degradation visualization (matplotlib graph)
-- TASK-011: Find the degradation inflection point
-- TASK-012: Output repetition detection (Jaccard similarity)
-- TASK-013: First blog post draft with entropy graphs
+### TASK-008: Token-Level Entropy from Logits
+**Status:** ⬜ TODO
+**Do:** Create `engine/entropy.py`
+
+Compute Shannon entropy over the model's next-token probability distribution.
+This tells you how "certain" the model is at each token. High entropy = uncertain/confused.
+Low entropy = confident.
+
+```python
+import mlx.core as mx
+
+def compute_token_entropy(logits: mx.array) -> mx.array:
+    """
+    Compute Shannon entropy of the next-token distribution.
+    
+    Args:
+        logits: shape (1, seq_len, vocab_size) — raw model output
+    
+    Returns:
+        entropy: shape (seq_len,) — entropy per position
+        
+    Formula: H = -Σ p(x) * log2(p(x))
+    """
+    # Step 1: Convert logits to probabilities via softmax
+    # Step 2: Compute p * log2(p) for each vocab item
+    # Step 3: Sum across vocab dimension, negate
+    # Step 4: Handle numerical stability (log of 0 = -inf)
+    #
+    # YOUR IMPLEMENTATION HERE
+    pass
+```
+
+To get logits, you need a DIFFERENT approach than generate().
+You need to run a single forward pass and capture the raw output:
+
+```python
+def get_logits_for_sequence(model, tokenizer, text):
+    """
+    Run a single forward pass and return raw logits.
+    Unlike generate(), this doesn't sample — just returns
+    the model's probability distribution at every position.
+    """
+    tokens = mx.array(tokenizer.encode(text))[None]  # (1, seq_len)
+    logits = model(tokens)  # (1, seq_len, vocab_size)
+    mx.eval(logits)
+    return logits
+```
+
+**Manual test:** 
+```python
+# High entropy expected (many valid next tokens):
+e1 = compute_token_entropy(get_logits_for_sequence(model, tokenizer, "The"))
+print(f"'The' entropy: {e1.mean().item():.4f}")  # Should be high (6-10+)
+
+# Lower entropy expected (very predictable continuation):
+e2 = compute_token_entropy(get_logits_for_sequence(model, tokenizer, "def fibonacci(n):"))
+print(f"'def fibonacci(n):' entropy: {e2.mean().item():.4f}")  # Should be lower
+```
+
+The code prompt should have meaningfully lower average entropy than the open-ended prompt.
+
+**Time:** 2-3 hours
+**Git:** `git commit -m "TASK-008: token-level entropy computation"`
+
+---
+
+### TASK-009: Entropy Over a Multi-Turn Conversation
+**Status:** ⬜ TODO
+**Do:** Create `scripts/multiturn_entropy.py`
+
+This is the KEY experiment. You're going to:
+1. Give the model a coding task
+2. Have a multi-turn conversation (50-100+ turns)
+3. Track entropy at each turn
+4. Find where entropy starts rising (= model getting confused)
+
+```python
+"""
+Multi-turn entropy tracking experiment.
+
+The model will be given a coding project and asked to build it
+step by step over many turns. We track entropy at each turn
+to find where degradation begins.
+"""
+from engine.entropy import compute_token_entropy, get_logits_for_sequence
+from mlx_lm import load, generate
+import json
+
+# Strategy: Build a conversation context manually.
+# After each model response, append it to the context
+# and ask the next question. This simulates real multi-turn use.
+
+SYSTEM_PROMPT = "You are a coding assistant. Follow instructions precisely."
+
+TASK_SEQUENCE = [
+    "Create a Python class called TaskManager with an __init__ method that stores a list of tasks.",
+    "Add a method add_task(title, priority) that adds a task dict to the list.",
+    "Add a method get_tasks_by_priority(priority) that filters and returns matching tasks.",
+    "Add a method complete_task(title) that marks a task as completed.",
+    "Add a method get_statistics() that returns count of total, completed, and pending tasks.",
+    "Now add due dates to tasks. Modify add_task to accept an optional due_date parameter.",
+    "Add a method get_overdue_tasks() that returns tasks past their due date.",
+    "Add a method export_to_json(filepath) that saves all tasks to a JSON file.",
+    "Add a method import_from_json(filepath) that loads tasks from a JSON file.",
+    "Add input validation to add_task: title must be non-empty string, priority must be 1-5.",
+    "Add a method sort_tasks(by='priority', reverse=False) that sorts the task list.",
+    "Add a method search_tasks(keyword) that searches task titles and returns matches.",
+    "Refactor the class to use a dataclass for individual tasks instead of dicts.",
+    "Add unit tests for add_task, complete_task, and get_statistics methods.",
+    "Add error handling: raise custom TaskNotFoundError when completing non-existent task.",
+    # Add more turns to push the model further...
+    # You can extend this to 50+ turns by asking increasingly specific questions
+    # about the code it's been generating.
+    "Show me the complete, final version of the TaskManager class with all features.",
+    "Now review your implementation. Are there any bugs? Fix them.",
+    "Add type hints to every method in the class.",
+    "Write a comprehensive docstring for the class and every public method.",
+    "Create a CLI interface using argparse that wraps the TaskManager.",
+]
+
+def run_multiturn_experiment(model, tokenizer, turns=None):
+    """
+    Run a multi-turn conversation and track entropy at each turn.
+    Returns: list of dicts with turn number, entropy stats, response length, etc.
+    """
+    if turns is None:
+        turns = TASK_SEQUENCE
+    
+    conversation = SYSTEM_PROMPT + "\n"
+    results = []
+    
+    for i, user_msg in enumerate(turns):
+        # Build the full prompt (all history + new question)
+        conversation += f"\nUser: {user_msg}\nAssistant: "
+        
+        # Generate response
+        response = generate(model, tokenizer, prompt=conversation, max_tokens=300)
+        
+        # Compute entropy on the FULL conversation so far (including response)
+        full_text = conversation + response
+        logits = get_logits_for_sequence(model, tokenizer, full_text)
+        entropy = compute_token_entropy(logits)
+        
+        # Track entropy of just the RESPONSE portion
+        # (last N tokens, where N = number of tokens in response)
+        response_tokens = len(tokenizer.encode(response))
+        response_entropy = entropy[-response_tokens:]
+        
+        result = {
+            "turn": i,
+            "prompt": user_msg[:80],
+            "response_length": response_tokens,
+            "context_length": len(tokenizer.encode(full_text)),
+            "response_entropy_mean": response_entropy.mean().item(),
+            "response_entropy_max": response_entropy.max().item(),
+            "response_entropy_min": response_entropy.min().item(),
+        }
+        results.append(result)
+        
+        print(f"Turn {i:3d} | ctx {result['context_length']:5d} tokens | "
+              f"entropy mean={result['response_entropy_mean']:.4f} "
+              f"max={result['response_entropy_max']:.4f}")
+        
+        # Append response to conversation for next turn
+        conversation += response + "\n"
+        
+        # Safety: stop if we're close to the model's context limit
+        if result['context_length'] > 28000:  # ~28K, leave buffer for 32K limit
+            print(f"Stopping at turn {i}: approaching context limit")
+            break
+    
+    return results
+
+if __name__ == "__main__":
+    model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+    results = run_multiturn_experiment(model, tokenizer)
+    
+    # Save raw data
+    with open("data/multiturn_entropy.json", "w") as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"\nCompleted {len(results)} turns. Data saved.")
+```
+
+**IMPORTANT:** Create `data/` directory first: `mkdir -p data`
+
+**Manual test:**
+- Script runs to completion (or stops at context limit)
+- Entropy numbers are printed for each turn
+- JSON file is saved with all data
+- Look at the numbers: does entropy trend upward in later turns?
+
+**Time:** 3-4 hours (model generation takes time across 20+ turns)
+**Git:** `git commit -m "TASK-009: multi-turn entropy tracking experiment"`
+
+---
+
+### TASK-010: Repetition Detection (Second CHI Signal)
+**Status:** ⬜ TODO
+**Do:** Create `engine/repetition.py`
+
+Entropy alone isn't enough. A model can be "confident" but repetitive
+(low entropy, but saying the same thing over and over). We need a second signal.
+
+```python
+def compute_repetition_score(text_a: str, text_b: str) -> float:
+    """
+    Compute Jaccard similarity between two text outputs.
+    
+    Jaccard(A, B) = |A ∩ B| / |A ∪ B|
+    where A and B are sets of n-grams (e.g., trigrams).
+    
+    Returns: 0.0 (completely different) to 1.0 (identical)
+    """
+    # Step 1: Tokenize both texts into trigrams (3-word chunks)
+    # Step 2: Compute intersection and union of trigram sets
+    # Step 3: Return |intersection| / |union|
+    pass
+
+def compute_self_repetition(text: str, window_size: int = 100) -> float:
+    """
+    Check if the model is repeating itself WITHIN a single response.
+    
+    Split the text into windows and check Jaccard similarity
+    between consecutive windows.
+    
+    High self-repetition = the model is stuck in a loop.
+    Returns: average pairwise Jaccard between consecutive windows.
+    """
+    pass
+
+def track_repetition_over_turns(responses: list[str]) -> list[float]:
+    """
+    Given a list of model responses (one per turn),
+    compute Jaccard similarity between consecutive responses.
+    
+    Returns: list of similarity scores.
+    Rising similarity = model converging to repetitive output.
+    """
+    pass
+```
+
+**Manual test:**
+```python
+# Identical texts should give 1.0
+assert compute_repetition_score("hello world foo bar", "hello world foo bar") == 1.0
+
+# Completely different texts should give 0.0 (or very low)
+score = compute_repetition_score(
+    "The quick brown fox jumps over the lazy dog",
+    "Python is a programming language for data science"
+)
+print(f"Different texts: {score:.4f}")  # Should be near 0
+
+# Slightly similar texts should give mid-range
+score = compute_repetition_score(
+    "def fibonacci(n): return n if n < 2 else fibonacci(n-1) + fibonacci(n-2)",
+    "def factorial(n): return 1 if n < 2 else n * factorial(n-1)"
+)
+print(f"Similar structure: {score:.4f}")  # Should be moderate (0.2-0.5)
+```
+
+**Time:** 1-2 hours
+**Git:** `git commit -m "TASK-010: repetition detection (Jaccard similarity)"`
+
+---
+
+### TASK-011: Goal Drift Detection (Third CHI Signal)
+**Status:** ⬜ TODO
+**Do:** Create `engine/goal_drift.py`
+
+The model should stay focused on the original task. If the cosine similarity
+between its output's hidden state and the original task's hidden state drops,
+the model is drifting.
+
+```python
+from engine.hidden_states import extract_hidden_states
+import mlx.core as mx
+
+def compute_goal_drift(model, tokenizer, original_task: str, 
+                       current_output: str, layer_idx: int = 16) -> float:
+    """
+    Measure how far the model's current output has drifted
+    from the original task.
+    
+    Returns: cosine similarity (0-1). Lower = more drift.
+    
+    Uses hidden states from layer_idx, averaged over sequence length.
+    """
+    # Get hidden state for original task description
+    _, task_states = extract_hidden_states(model, tokenizer, original_task,
+                                           layer_idx=layer_idx, max_tokens=1)
+    
+    # Get hidden state for current model output
+    _, output_states = extract_hidden_states(model, tokenizer, current_output,
+                                              layer_idx=layer_idx, max_tokens=1)
+    
+    # Average over sequence length to get single vector per text
+    task_vec = mx.mean(task_states, axis=1).squeeze()    # (3584,)
+    output_vec = mx.mean(output_states, axis=1).squeeze() # (3584,)
+    
+    # Cosine similarity
+    cos_sim = mx.sum(task_vec * output_vec) / (
+        mx.sqrt(mx.sum(task_vec ** 2)) * mx.sqrt(mx.sum(output_vec ** 2))
+    )
+    mx.eval(cos_sim)
+    return cos_sim.item()
+```
+
+**Manual test:**
+```python
+# On-task response should have high similarity to task
+task = "Build a Python TaskManager class"
+on_task = "class TaskManager:\n    def __init__(self):\n        self.tasks = []"
+off_task = "The weather in Paris is beautiful this time of year."
+
+score_on = compute_goal_drift(model, tokenizer, task, on_task)
+score_off = compute_goal_drift(model, tokenizer, task, off_task)
+
+print(f"On-task drift: {score_on:.4f}")   # Should be high (0.7+)
+print(f"Off-task drift: {score_off:.4f}") # Should be lower
+assert score_on > score_off, "On-task should be closer to original task"
+```
+
+**Time:** 1-2 hours (mostly reusing TASK-005 code)
+**Git:** `git commit -m "TASK-011: goal drift detection via hidden state similarity"`
+
+---
+
+### TASK-012: Visualize Degradation (The Money Graph)
+**Status:** ⬜ TODO
+**Do:** Create `scripts/visualize_degradation.py`
+
+This is the graph that goes in your README, your blog post, your pitch.
+It shows entropy, repetition, and goal drift over a multi-turn conversation.
+
+```python
+"""
+Generate the "degradation graph" — the visual proof that models lose coherence
+and that we can detect exactly when it happens.
+"""
+import json
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend
+
+def plot_degradation(data_path: str = "data/multiturn_entropy.json",
+                     output_path: str = "data/degradation_graph.png"):
+    
+    with open(data_path) as f:
+        results = json.load(f)
+    
+    turns = [r['turn'] for r in results]
+    entropy_mean = [r['response_entropy_mean'] for r in results]
+    entropy_max = [r['response_entropy_max'] for r in results]
+    context_len = [r['context_length'] for r in results]
+    
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+    
+    # Top plot: Entropy over turns
+    ax1 = axes[0]
+    ax1.plot(turns, entropy_mean, 'b-', linewidth=2, label='Mean Entropy')
+    ax1.fill_between(turns, entropy_mean, entropy_max, alpha=0.2, color='blue',
+                     label='Max Entropy')
+    ax1.set_ylabel('Response Entropy (bits)')
+    ax1.set_title('Cognitive Degradation Over Multi-Turn Conversation\n'
+                  'Qwen2.5-Coder-7B on Apple M4 Pro')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Mark potential degradation point (where entropy starts trending up)
+    # You'll refine this after seeing real data
+    
+    # Bottom plot: Context length over turns
+    ax2 = axes[1]
+    ax2.plot(turns, context_len, 'r-', linewidth=2)
+    ax2.set_ylabel('Context Length (tokens)')
+    ax2.set_xlabel('Turn Number')
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    print(f"Saved: {output_path}")
+
+if __name__ == "__main__":
+    plot_degradation()
+```
+
+**IMPORTANT:** Install matplotlib first: `pip install matplotlib`
+
+**Manual test:**
+- Run TASK-009 first to generate the data
+- Run this script to generate the graph
+- Open the PNG and look at it — does entropy trend upward?
+- If the model hit context limits early, the graph may be short — that's fine
+
+**Time:** 1-2 hours
+**Git:** `git commit -m "TASK-012: degradation visualization"`
+
+---
+
+### TASK-013: Enhanced Experiment with All Three Signals
+**Status:** ⬜ TODO
+**Do:** Create `scripts/full_degradation_experiment.py`
+
+Combine all three signals (entropy + repetition + goal drift) into
+a single experiment. This is the proto-CHI.
+
+Run the same multi-turn conversation but track ALL signals:
+- Entropy per turn (from TASK-008)
+- Repetition between consecutive responses (from TASK-010)
+- Goal drift from original task (from TASK-011)
+
+Save all data. Generate a combined 3-panel graph.
+
+This script should:
+1. Load model
+2. Define a multi-turn coding task (reuse TASK-009's sequence)
+3. For each turn: generate response, compute entropy, compute repetition
+   vs previous response, compute goal drift vs original task
+4. Save all metrics to `data/full_degradation.json`
+5. Generate `data/full_degradation_graph.png` with 3 subplots
+
+**Manual test:**
+- Graph has 3 panels: entropy, repetition, goal drift
+- All three lines are visible and change over turns
+- Look for correlations: does repetition rise when entropy does?
+  Does goal drift increase as context fills up?
+
+**Time:** 2-3 hours
+**Git:** `git commit -m "TASK-013: full 3-signal degradation experiment"`
+
+---
+
+### TASK-014: Find the Inflection Point
+**Status:** ⬜ TODO
+**Do:** Create `scripts/find_inflection.py`
+
+Analyze the data from TASK-013 to find the EXACT turn where degradation begins.
+
+```python
+"""
+Find where cognitive degradation begins.
+This is the turn number where intervention should start.
+"""
+import json
+import numpy as np
+
+def find_inflection(data_path: str = "data/full_degradation.json"):
+    with open(data_path) as f:
+        results = json.load(f)
+    
+    entropy = [r['response_entropy_mean'] for r in results]
+    
+    # Method 1: Moving average crossover
+    # If short-term average exceeds long-term average, degradation has begun
+    window_short = 3
+    window_long = 7
+    
+    if len(entropy) < window_long:
+        print("Not enough data points. Need at least 7 turns.")
+        return
+    
+    short_ma = [sum(entropy[max(0,i-window_short):i+1]) / min(i+1, window_short)
+                for i in range(len(entropy))]
+    long_ma = [sum(entropy[max(0,i-window_long):i+1]) / min(i+1, window_long) 
+               for i in range(len(entropy))]
+    
+    # Find first crossover after initial stabilization
+    crossover_turn = None
+    for i in range(window_long, len(entropy)):
+        if short_ma[i] > long_ma[i] * 1.05:  # 5% threshold
+            crossover_turn = i
+            break
+    
+    # Method 2: Maximum rate of change
+    if len(entropy) >= 3:
+        diffs = [entropy[i+1] - entropy[i] for i in range(len(entropy)-1)]
+        max_increase_turn = max(range(len(diffs)), key=lambda i: diffs[i])
+    else:
+        max_increase_turn = None
+    
+    print(f"Total turns analyzed: {len(entropy)}")
+    print(f"Entropy range: {min(entropy):.4f} — {max(entropy):.4f}")
+    print(f"Moving average crossover at turn: {crossover_turn}")
+    print(f"Maximum entropy increase at turn: {max_increase_turn}")
+    
+    if crossover_turn:
+        print(f"\n→ Degradation likely begins around turn {crossover_turn}")
+        print(f"  This is where CHI would start triggering Level 2 intervention")
+    else:
+        print(f"\n→ No clear inflection found. Model may not have degraded")
+        print(f"  within the number of turns tested. Try longer conversations.")
+
+if __name__ == "__main__":
+    find_inflection()
+```
+
+**Manual test:**
+- Script identifies a turn number where degradation begins
+- OR reports no inflection (which is also useful data — model was fine)
+- Write the inflection turn in your SESSION_LOG — this number drives
+  everything in Phase 1 (when to trigger interventions)
+
+**Time:** 1-2 hours
+**Git:** `git commit -m "TASK-014: inflection point detection"`
+
+---
+
+## WEEK 2 CHECKLIST
+- [ ] TASK-008: Token-level entropy computation (2-3 hrs)
+- [ ] TASK-009: Multi-turn entropy experiment (3-4 hrs)
+- [ ] TASK-010: Repetition detection — Jaccard (1-2 hrs)
+- [ ] TASK-011: Goal drift detection (1-2 hrs)
+- [ ] TASK-012: Degradation visualization (1-2 hrs)
+- [ ] TASK-013: Full 3-signal experiment (2-3 hrs)
+- [ ] TASK-014: Find inflection point (1-2 hrs)
+
+---
 
 ## WEEK 3: CHI Score + CLI Skeleton
 
