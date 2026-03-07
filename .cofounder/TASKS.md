@@ -220,7 +220,7 @@ Capture hidden states from both at the same layer. Compute cosine similarity bet
 By end of Week 2, you'll have a graph showing EXACTLY where a model degrades.
 
 ### TASK-008: Token-Level Entropy from Logits
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `engine/entropy.py`
 
 Compute Shannon entropy over the model's next-token probability distribution.
@@ -729,7 +729,7 @@ if __name__ == "__main__":
 ---
 
 ## WEEK 2 CHECKLIST
-- [ ] TASK-008: Token-level entropy computation (2-3 hrs)
+- [x] TASK-008: Token-level entropy computation (2-3 hrs)
 - [ ] TASK-009: Multi-turn entropy experiment (3-4 hrs)
 - [ ] TASK-010: Repetition detection — Jaccard (1-2 hrs)
 - [ ] TASK-011: Goal drift detection (1-2 hrs)

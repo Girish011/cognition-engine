@@ -102,3 +102,15 @@
 - `_CaptureAttention`: replicates Attention forward (Q/K/V, RoPE, GQA repeat), computes scores → mask → softmax, appends weights to list, then output = weights @ V and o_proj.
 - `extract_attention_weights(model, tokenizer, prompt, layer_idx=16, max_tokens=50)` returns `(generated_text, attention_weights)`; weights shape `(1, n_heads, seq_len, seq_len)`.
 - Manual test: `python engine/attention_weights.py` — output: generated text + **Attention weights shape: (1, 28, 46, 46)** (28 heads, 46 tokens).
+
+## 2026-03-07 (Week 2 — TASK-008: Token-level entropy)
+
+- TASK-008 — Token-Level Entropy from Logits — Completed
+- Created `engine/entropy.py`: Shannon entropy H = -Σ p(x) log2(p(x)) over next-token distribution.
+  - `compute_token_entropy(logits)`: softmax → p*log2(p) with 0*log(0)=0 for stability → sum over vocab, negate → returns (seq_len,).
+  - `get_logits_for_sequence(model, tokenizer, text)`: single forward pass (no sampling), returns (1, seq_len, vocab_size).
+- Manual test (`python engine/entropy.py`):
+  - 'The' mean entropy: **7.3047** (high, 6–10+ as required)
+  - 'def fibonacci(n):' mean entropy: **3.3906** (lower)
+  - Code prompt has meaningfully lower average entropy than open-ended prompt ✓
+- Git: `TASK-008: token-level entropy computation`
