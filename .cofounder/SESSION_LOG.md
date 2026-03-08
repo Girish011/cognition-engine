@@ -176,3 +176,18 @@
   - Confirms both methods run and produce a concrete inflection turn when enough data is present.
 - **Inflection turn:** For production: run full TASK-013 then `python scripts/find_inflection.py`; write the printed turn number here — it drives Phase 1 (when to trigger interventions). Current repo has only 2-turn real run; full run needed for real inflection number.
 - Git: `TASK-014: inflection point detection`
+
+## 2026-03-08 (Goal drift fix + full 3-signal experiment)
+
+- **Bug:** In the full experiment, goal drift was pegged at 1.0 (cosine similarity 0.0). Standalone TASK-011 was correct (0.89); inside the experiment we were comparing hidden states wrongly for long responses.
+- **Root cause:** `compute_goal_drift` used `extract_hidden_states(..., max_tokens=1)`, which for a long response (300+ tokens) did a forward over prompt+1 token and averaged hidden state over the full sequence. That average over 300+ positions produced degenerate/near-zero similarity (numerical/scale issue).
+- **Fix 1 — Forward-only, no generation:** Added `extract_hidden_states_forward_only(model, tokenizer, text, layer_idx)` in `engine/hidden_states.py`: single forward pass on tokenized text, no generation. Used in `compute_goal_drift(..., use_forward_only=True)` so both task and response are compared as plain text representations.
+- **Fix 2 — Long sequences:** For `current_output` with >128 tokens, use **last-token hidden state only** instead of mean over sequence (causal LM last position encodes the sequence). Prevents degenerate 0 similarity when averaging 300+ positions. Short sequences still use mean.
+- **Verification:** Short task vs short response → 0.98; short vs long on-task response (358 tokens) → 0.77 (was 0.0 before fix). 3-turn experiment: drift = 0.31, 0.19, 0.36 (no longer pegged at 1.0).
+- **Experiment script:** Added `--debug` to print `original_task`, `current_response` snippet, and raw cosine each turn. Confirmed we pass only the current turn’s **response** (not full conversation) to `compute_goal_drift`.
+- **Full 20-turn run:** Started `python scripts/full_degradation_experiment.py` (no `--max-turns`). Takes ~15–30 min. When it finishes:
+  1. Regenerate graph: already saved as `data/full_degradation_graph.png` (x-axis will be 0–19).
+  2. Run `python scripts/find_inflection.py` and **write the printed inflection turn below**.
+  3. Open `data/full_degradation_graph.png` and add a one-line description of the 3 panels below.
+- **Real inflection turn (from full run):** **Turn 10.** `python scripts/find_inflection.py` on 20-turn data: moving average crossover at turn 10; maximum entropy increase at turn 13 (largest jump into turn 14). Entropy range 0.0182 — 1.3564. → **CHI would start Level 2 intervention around turn 10.**
+- **3-signal graph description (from full run):** X-axis 0–19 (20 turns). **Entropy:** low and stable for turns 0–9 (~0.02–0.07), then rises from turn 11 (0.08, 0.44, 0.46, 0.97, 0.90, 1.36, …). **Repetition:** rises through turn 9 (up to ~0.88), then turns 11–17 show 0 or 1.0 (short/variable responses). **Goal drift:** varies per turn (0.15–0.55), not pegged at 1.0. Clear degradation: entropy spike from ~turn 10 onward; inflection at turn 10.

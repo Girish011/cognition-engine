@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import mlx.core as mx
 
-from engine.hidden_states import extract_hidden_states
+from engine.hidden_states import extract_hidden_states, extract_hidden_states_forward_only
 
 
 def compute_goal_drift(
@@ -22,6 +22,7 @@ def compute_goal_drift(
     original_task: str,
     current_output: str,
     layer_idx: int = 27,
+    use_forward_only: bool = True,
 ) -> float:
     """
     Measure how far the model's current output has drifted from the original task.
@@ -30,22 +31,40 @@ def compute_goal_drift(
 
     Uses hidden states from layer_idx (default 27 = last layer for better semantic
     discrimination), averaged over sequence length. Numerically stable for large norms.
+
+    When use_forward_only=True (default): single forward pass on each text, no generation.
+    This avoids degenerate similarity when current_output is long (e.g. 300 tokens) where
+    "prompt + 1 generated token" would average over a very long sequence and distort the
+    comparison. Both task and response are compared as plain text representations.
     """
-    # Get hidden state for original task description (prompt + 1 generated token)
-    _, task_states = extract_hidden_states(
-        model, tokenizer, original_task, layer_idx=layer_idx, max_tokens=1
-    )
-    # Get hidden state for current model output
-    _, output_states = extract_hidden_states(
-        model, tokenizer, current_output, layer_idx=layer_idx, max_tokens=1
-    )
+    if use_forward_only:
+        task_states = extract_hidden_states_forward_only(
+            model, tokenizer, original_task, layer_idx=layer_idx
+        )
+        output_states = extract_hidden_states_forward_only(
+            model, tokenizer, current_output, layer_idx=layer_idx
+        )
+    else:
+        _, task_states = extract_hidden_states(
+            model, tokenizer, original_task, layer_idx=layer_idx, max_tokens=1
+        )
+        _, output_states = extract_hidden_states(
+            model, tokenizer, current_output, layer_idx=layer_idx, max_tokens=1
+        )
 
     if task_states is None or output_states is None:
         raise ValueError("Hidden state extraction returned None")
 
-    # Average over batch and sequence to get single vector per text: (1, seq, dim) -> (dim,)
+    # Task: mean over sequence (short text). Output: for long sequences use last-token
+    # hidden state only; averaging over 300+ positions can produce degenerate (e.g. ~0)
+    # similarity due to scale/numerics. Last token encodes the full sequence in causal LMs.
     task_vec = mx.mean(task_states, axis=(0, 1))
-    output_vec = mx.mean(output_states, axis=(0, 1))
+    seq_len = output_states.shape[1]
+    max_mean_positions = 128
+    if seq_len > max_mean_positions:
+        output_vec = output_states[0, -1, :]  # (hidden_dim,)
+    else:
+        output_vec = mx.mean(output_states, axis=(0, 1))
 
     # Numerically stable cosine: scale to avoid overflow, then unit vectors
     scale_a = mx.max(mx.abs(task_vec)) + 1e-12

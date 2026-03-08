@@ -38,6 +38,7 @@ def run_full_degradation_experiment(
     turns=None,
     max_tokens: int = 300,
     context_limit: int = 28000,
+    debug: bool = False,
 ):
     """
     Run multi-turn conversation and track entropy, repetition, and goal drift.
@@ -79,13 +80,18 @@ def run_full_degradation_experiment(
             repetition_score = compute_repetition_score(responses[i - 1], response)
 
         # --- 3. Goal drift from original task (TASK-011) ---
-        # current_output = this turn's response; similarity high = on-task, low = drift
+        # Pass ONLY current turn's response (not full conversation). Uses forward-only
+        # hidden state so long response text doesn't produce degenerate similarity.
         try:
             similarity = compute_goal_drift(
-                model, tokenizer, original_task, response, layer_idx=27
+                model, tokenizer, original_task, response, layer_idx=27, use_forward_only=True
             )
             # Store as "drift" so that higher = worse (align with entropy & repetition)
             goal_drift = 1.0 - similarity
+            if debug:
+                print(f"  [Turn {i}] original_task = '{original_task[:80]}...'")
+                print(f"  [Turn {i}] current_response = '{response[:80]}...'")
+                print(f"  [Turn {i}] goal_drift raw cosine (similarity) = {similarity:.4f}")
         except Exception as e:
             goal_drift = float("nan")
             similarity = float("nan")
@@ -194,6 +200,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Only regenerate the graph from existing data/full_degradation.json.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print goal-drift debug info (original_task, response snippet, raw cosine) each turn.",
+    )
     args = parser.parse_args()
 
     data_dir = Path(__file__).resolve().parent.parent / "data"
@@ -206,7 +217,9 @@ if __name__ == "__main__":
     else:
         model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
         turns = TASK_SEQUENCE[: args.max_turns] if args.max_turns else None
-        results = run_full_degradation_experiment(model, tokenizer, turns=turns)
+        results = run_full_degradation_experiment(
+            model, tokenizer, turns=turns, debug=args.debug
+        )
         with open(out_json, "w") as f:
             json.dump(results, f, indent=2)
         print(f"Saved: {out_json}")

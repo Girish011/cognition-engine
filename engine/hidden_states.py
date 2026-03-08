@@ -56,6 +56,37 @@ def extract_hidden_states(model, tokenizer, prompt, layer_idx=16, max_tokens=100
     finally:
         layers[layer_idx] = original_layer
 
+
+def extract_hidden_states_forward_only(model, tokenizer, text: str, layer_idx: int = 16):
+    """
+    Get hidden state for text via a single forward pass (no generation).
+    Use when comparing two texts of possibly very different length (e.g. task vs long response).
+    Returns: hidden_state_tensor shape (1, seq_len, hidden_dim), or None on failure.
+    """
+    captured = []
+    layers = model.model.layers
+    original_layer = layers[layer_idx]
+    layers[layer_idx] = _CaptureLayer(original_layer, captured)
+
+    try:
+        if isinstance(text, str):
+            tokens = tokenizer.encode(text, add_special_tokens=True)
+        else:
+            tokens = list(text)
+        if not tokens:
+            return None
+        tokens = mx.array(tokens)[None]  # (1, seq_len)
+        captured.clear()
+        _ = model(tokens, cache=None)
+        mx.eval(_)
+        hidden = captured[0] if captured else None
+        if hidden is not None:
+            mx.eval(hidden)
+        return hidden
+    finally:
+        layers[layer_idx] = original_layer
+
+
 if __name__ == "__main__":
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
     text, states = extract_hidden_states(model, tokenizer, "Write hello world in Python")
