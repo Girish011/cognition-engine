@@ -134,3 +134,12 @@
   - `track_repetition_over_turns(responses)`: Jaccard between consecutive responses; list of length len(responses)-1.
 - Manual test (`python engine/repetition.py`): identical → 1.0; different texts → 0.0; similar code → ~0.18; self-repetition on repeated "word" → 1.0; track over turns smoke test OK.
 - Git: `TASK-010: repetition detection (Jaccard similarity)`
+
+## 2026-03-07 (Week 2 — TASK-011: Goal drift detection)
+
+- TASK-011 — Goal Drift Detection (Third CHI Signal) — Completed
+- Created `engine/goal_drift.py`: drift = 1 − cosine similarity of hidden states (task vs current output).
+  - Uses `extract_hidden_states(..., max_tokens=1)` for task and current_output; mean over (0,1) to get one vector per text; cosine similarity with scale-then-normalize to avoid overflow (hidden state norms can be huge).
+  - Default `layer_idx=27` (last layer) so on-task > off-task in manual test; layer 16 gave near-identical scores.
+- Manual test: on-task 0.89, off-task 0.82; assert score_on > score_off passes. Path fix for `python engine/goal_drift.py` (project root on sys.path).
+- Git: `TASK-011: goal drift detection via hidden state similarity`

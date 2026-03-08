@@ -487,7 +487,7 @@ print(f"Similar structure: {score:.4f}")  # Should be moderate (0.2-0.5)
 ---
 
 ### TASK-011: Goal Drift Detection (Third CHI Signal)
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `engine/goal_drift.py`
 
 The model should stay focused on the original task. If the cosine similarity
@@ -732,7 +732,7 @@ if __name__ == "__main__":
 - [x] TASK-008: Token-level entropy computation (2-3 hrs)
 - [x] TASK-009: Multi-turn entropy experiment (3-4 hrs)
 - [x] TASK-010: Repetition detection — Jaccard (1-2 hrs)
-- [ ] TASK-011: Goal drift detection (1-2 hrs)
+- [x] TASK-011: Goal drift detection (1-2 hrs)
 - [ ] TASK-012: Degradation visualization (1-2 hrs)
 - [ ] TASK-013: Full 3-signal experiment (2-3 hrs)
 - [ ] TASK-014: Find inflection point (1-2 hrs)
