@@ -201,3 +201,12 @@
 - Constants: `MIN_RESPONSE_TOKENS_FOR_REPETITION = 20`, `CHI_SMOOTH_ALPHA = 0.3`. Return dict includes `chi_raw` (unsmoothed) and `chi_score` (smoothed); history and intervention level use smoothed value.
 - Manual test: `python engine/chi.py` — Turn 0 CHI 0.934 Level 1, Turn 1 CHI 0.897 Level 1; passed.
 - Git: `TASK-015: CHI score combining 3 signals`
+
+## 2026-03-08 (Week 3 — TASK-016: Validate CHI against Week 2 data)
+
+- TASK-016 — Validate CHI Against Your Week 2 Data — Completed
+- Created `scripts/validate_chi.py`: loads `data/full_degradation.json`, applies same CHI formula (and repetition gating + smoothing) to pre-computed signals (no model load; response text not stored in JSON). Computes CHI per turn and intervention level.
+- Output: `data/chi_validation.png` — top panel: CHI score over turns with threshold lines at 0.8, 0.5, 0.3; bottom panel: entropy, repetition, goal drift for comparison.
+- Verification: CHI starts high (>0.7) in early turns; drops below 0.7 around inflection (first turn < 0.7 is turn 11; TASK-014 inflection turn 10). Level 1 for turns 0–4, Level 2 from turn 5 onward. Intervention levels make sense.
+- Manual test: `python scripts/validate_chi.py` — graph saved, summary and per-turn levels printed.
+- Git: `TASK-016: CHI validated against real degradation data`
