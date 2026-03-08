@@ -621,7 +621,7 @@ if __name__ == "__main__":
 ---
 
 ### TASK-013: Enhanced Experiment with All Three Signals
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `scripts/full_degradation_experiment.py`
 
 Combine all three signals (entropy + repetition + goal drift) into
@@ -734,7 +734,7 @@ if __name__ == "__main__":
 - [x] TASK-010: Repetition detection — Jaccard (1-2 hrs)
 - [x] TASK-011: Goal drift detection (1-2 hrs)
 - [x] TASK-012: Degradation visualization (1-2 hrs)
-- [ ] TASK-013: Full 3-signal experiment (2-3 hrs)
+- [x] TASK-013: Full 3-signal experiment (2-3 hrs)
 - [ ] TASK-014: Find inflection point (1-2 hrs)
 
 ---

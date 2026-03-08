@@ -1,0 +1,22 @@
+[
+  {
+    "turn": 0,
+    "prompt": "Create a Python class called TaskManager with an __init__ method that stores a l",
+    "response_length": 300,
+    "context_length": 334,
+    "response_entropy_mean": 0.201904296875,
+    "repetition_vs_previous": 0.0,
+    "goal_drift": 1.0,
+    "goal_similarity": 0.0
+  },
+  {
+    "turn": 1,
+    "prompt": "Add a method add_task(title, priority) that adds a task dict to the list.",
+    "response_length": 300,
+    "context_length": 657,
+    "response_entropy_mean": 0.169189453125,
+    "repetition_vs_previous": 0.3832599118942731,
+    "goal_drift": 1.0,
+    "goal_similarity": 0.0
+  }
+]
