@@ -654,7 +654,7 @@ This script should:
 ---
 
 ### TASK-014: Find the Inflection Point
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `scripts/find_inflection.py`
 
 Analyze the data from TASK-013 to find the EXACT turn where degradation begins.
@@ -735,7 +735,7 @@ if __name__ == "__main__":
 - [x] TASK-011: Goal drift detection (1-2 hrs)
 - [x] TASK-012: Degradation visualization (1-2 hrs)
 - [x] TASK-013: Full 3-signal experiment (2-3 hrs)
-- [ ] TASK-014: Find inflection point (1-2 hrs)
+- [x] TASK-014: Find inflection point (1-2 hrs)
 
 ---
 

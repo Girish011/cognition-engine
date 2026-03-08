@@ -150,3 +150,29 @@
 - Created `scripts/visualize_degradation.py`: reads `data/multiturn_entropy.json`, plots 2 panels (entropy mean + fill to max over turns; context length over turns), saves `data/degradation_graph.png`. Uses matplotlib Agg backend. `pip install matplotlib` required.
 - Manual test: script runs from project root, outputs "Saved: data/degradation_graph.png". Graph shows entropy and context growth over 20 turns.
 - Git: `TASK-012: degradation visualization`
+
+## 2026-03-08 (Week 2 — TASK-013: Full 3-signal degradation experiment)
+
+- TASK-013 — Enhanced Experiment with All Three Signals — Completed
+- Created `scripts/full_degradation_experiment.py`: combines entropy (TASK-008), repetition (TASK-010), and goal drift (TASK-011) in one multi-turn run.
+  - Reuses `TASK_SEQUENCE` and `SYSTEM_PROMPT` from `scripts.multiturn_entropy`; for each turn: generate response, compute response entropy, Jaccard vs previous response (turn 0 → 0.0), and goal drift = 1 − cosine similarity vs original task (first user message).
+  - Saves `data/full_degradation.json`; generates `data/full_degradation_graph.png` with 3 panels (entropy, repetition, goal drift). CLI: `--max-turns N` for quick test, `--plot-only` to redraw from existing JSON.
+- Created `data/FULL_DEGRADATION_GRAPH_README.md`: how to read the 3 panels (↑ worse for each), what to look for, regenerate commands.
+- In-graph annotations: each panel has “↑ worse: …” hint; bottom text box explains shared x-axis and points to README.
+- Manual test: `python scripts/full_degradation_experiment.py --max-turns 2` — completes, JSON and 3-panel PNG saved. Full run: `python scripts/full_degradation_experiment.py`.
+- Git: `TASK-013: full 3-signal degradation experiment`
+
+## 2026-03-08 (Week 2 — TASK-014: Find inflection point)
+
+- TASK-014 — Find the Inflection Point — Completed
+- Created `scripts/find_inflection.py`: analyzes `data/full_degradation.json` to find the turn where degradation begins (when CHI would trigger Level 2 intervention).
+  - Method 1 — Moving average crossover: short MA (window 3) vs long MA (window 7); first turn where short_ma > long_ma × 1.05 is the crossover turn.
+  - Method 2 — Maximum rate of change: turn index where entropy increase (diffs[i] = entropy[i+1] − entropy[i]) is largest; reported as “largest jump into turn N”.
+  - Requires at least 7 turns; otherwise prints “Need at least 7 turns” and suggests running a longer experiment. CLI: `--data <path>` for alternate JSON.
+- Manual test: with 2-turn data → “Not enough data points (2). Need at least 7 turns.”
+- **Synthetic test finding** (script logic verified on 10-turn synthetic data; file was removed after test):
+  - Command: `cd /Users/girish11/cognition-engine && python scripts/find_inflection.py --data data/full_degradation_synthetic_test.json`
+  - Output: Total turns 10; entropy range 0.0000 — 0.3400; moving average crossover at turn **7**; maximum entropy increase at turn **4** (largest jump into turn 5); recommendation: “Degradation likely begins around turn 7 — this is where CHI would start triggering Level 2 intervention”.
+  - Confirms both methods run and produce a concrete inflection turn when enough data is present.
+- **Inflection turn:** For production: run full TASK-013 then `python scripts/find_inflection.py`; write the printed turn number here — it drives Phase 1 (when to trigger interventions). Current repo has only 2-turn real run; full run needed for real inflection number.
+- Git: `TASK-014: inflection point detection`
