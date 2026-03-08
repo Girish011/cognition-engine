@@ -913,7 +913,7 @@ Generate a graph: `data/chi_validation.png`
 ---
 
 ### TASK-017: Project Structure Cleanup
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Reorganize the project into a proper Python package.
 
 ```
@@ -1177,7 +1177,7 @@ Does it make you want to try it in under 30 seconds?
 - [ ] FIX: Full 20-turn 3-signal experiment (see FIX_BEFORE_WEEK3.md) (1-2 hrs)
 - [x] TASK-015: CHI score implementation (3-4 hrs)
 - [x] TASK-016: Validate CHI against real data (2-3 hrs)
-- [ ] TASK-017: Project restructure (2-3 hrs)
+- [x] TASK-017: Project restructure (2-3 hrs)
 - [ ] TASK-018: Basic CLI with CHI display (2-3 hrs)
 - [ ] TASK-019: Unit tests (1-2 hrs)
 - [ ] TASK-020: README draft (2-3 hrs)

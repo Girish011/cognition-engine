@@ -88,6 +88,8 @@ def extract_hidden_states_forward_only(model, tokenizer, text: str, layer_idx: i
 
 
 if __name__ == "__main__":
+    from cognition_engine.inference import load
+
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
     text, states = extract_hidden_states(model, tokenizer, "Write hello world in Python")
     print("Generated:", text[:200] + ("..." if len(text) > 200 else ""))

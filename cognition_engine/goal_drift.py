@@ -5,15 +5,9 @@ Measures how far the model's current output has drifted from the original task
 via cosine similarity of hidden states (lower = more drift).
 """
 
-import sys
-from pathlib import Path
-
-# Ensure project root is on path when running as script (e.g. python engine/goal_drift.py)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import mlx.core as mx
 
-from engine.hidden_states import extract_hidden_states, extract_hidden_states_forward_only
+from .hidden_states import extract_hidden_states, extract_hidden_states_forward_only
 
 
 def compute_goal_drift(
@@ -85,7 +79,7 @@ def compute_goal_drift(
 
 
 if __name__ == "__main__":
-    from mlx_lm import load
+    from cognition_engine.inference import load
 
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
 

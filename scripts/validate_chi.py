@@ -19,7 +19,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# Must match engine/chi.py
+# Must match cognition_engine.chi
 MIN_RESPONSE_TOKENS_FOR_REPETITION = 20
 CHI_SMOOTH_ALPHA = 0.3
 W_ENTROPY = 0.4

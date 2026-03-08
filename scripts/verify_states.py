@@ -8,12 +8,12 @@ Run from repo root: python scripts/verify_states.py
 import sys
 from pathlib import Path
 
-# Ensure repo root is on path for engine import
+# Ensure repo root is on path for cognition_engine import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import mlx.core as mx
 from mlx_lm import load
-from engine.hidden_states import extract_hidden_states
+from cognition_engine.hidden_states import extract_hidden_states
 
 
 def cosine_similarity(a: mx.array, b: mx.array) -> float:

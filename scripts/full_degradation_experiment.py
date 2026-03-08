@@ -24,9 +24,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from engine.entropy import compute_token_entropy, get_logits_for_sequence
-from engine.repetition import compute_repetition_score
-from engine.goal_drift import compute_goal_drift
+from cognition_engine.entropy import compute_token_entropy, get_logits_for_sequence
+from cognition_engine.repetition import compute_repetition_score
+from cognition_engine.goal_drift import compute_goal_drift
 from mlx_lm import load, generate
 
 from scripts.multiturn_entropy import SYSTEM_PROMPT, TASK_SEQUENCE

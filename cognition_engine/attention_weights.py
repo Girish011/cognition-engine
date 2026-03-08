@@ -132,6 +132,8 @@ def extract_attention_weights(
 
 
 if __name__ == "__main__":
+    from cognition_engine.inference import load
+
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
     prompt = "Write a short Python function."
     text, attn_weights = extract_attention_weights(

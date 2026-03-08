@@ -210,3 +210,12 @@
 - Verification: CHI starts high (>0.7) in early turns; drops below 0.7 around inflection (first turn < 0.7 is turn 11; TASK-014 inflection turn 10). Level 1 for turns 0–4, Level 2 from turn 5 onward. Intervention levels make sense.
 - Manual test: `python scripts/validate_chi.py` — graph saved, summary and per-turn levels printed.
 - Git: `TASK-016: CHI validated against real degradation data`
+
+## 2026-03-08 (Week 3 — TASK-017: Project structure cleanup)
+
+- TASK-017 — Project Structure Cleanup — Completed
+- Renamed `engine/` → `cognition_engine/` (Python package convention). Created `cognition_engine/` with: `__init__.py` (`__version__ = "0.1.0"`), `inference.py` (re-export of mlx_lm load/generate), `entropy.py`, `repetition.py`, `hidden_states.py`, `attention_weights.py`, `goal_drift.py`, `chi.py`. Internal imports use relative (e.g. `from .entropy import ...`); removed sys.path hacks from package code.
+- Updated all script imports to `cognition_engine`: `full_degradation_experiment.py`, `multiturn_entropy.py`, `verify_states.py`. Added sys.path.insert in `multiturn_entropy.py` for run-from-root.
+- Added `pyproject.toml` (name=cognition-engine, version 0.1.0, deps mlx/mlx-lm, setuptools), `.gitignore` (data/*.json, data/*.png, kept data/.gitkeep and data/*README*), `data/.gitkeep`, `tests/__init__.py`, `tests/test_entropy.py`, `tests/test_repetition.py`, `README.md` (draft), `LICENSE` (MIT).
+- Deleted `engine/` (all modules moved). Manual tests from project root: `python -c "from cognition_engine.chi import CHIMonitor; print('OK')"`, `python -c "from cognition_engine.entropy import compute_token_entropy; print('OK')"`, `python scripts/full_degradation_experiment.py --max-turns 2` — all passed. `pytest tests/` — 8 passed.
+- Git: `TASK-017: restructure as proper Python package`

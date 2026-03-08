@@ -16,17 +16,11 @@ Additions:
   over turns to avoid wild single-turn swings.
 """
 
-import sys
-from pathlib import Path
-
-# Allow running as script from project root (e.g. python engine/chi.py)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import mlx.core as mx
 
-from engine.entropy import compute_token_entropy, get_logits_for_sequence
-from engine.repetition import compute_repetition_score
-from engine.goal_drift import compute_goal_drift
+from .entropy import compute_token_entropy, get_logits_for_sequence
+from .repetition import compute_repetition_score
+from .goal_drift import compute_goal_drift
 
 # Minimum response token count before we compute repetition (otherwise carry forward)
 MIN_RESPONSE_TOKENS_FOR_REPETITION = 20
@@ -168,7 +162,7 @@ class CHIMonitor:
 
 
 if __name__ == "__main__":
-    from mlx_lm import load
+    from cognition_engine.inference import load
 
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
     monitor = CHIMonitor(model, tokenizer, "Build a TaskManager class")

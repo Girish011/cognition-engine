@@ -50,7 +50,7 @@ def get_logits_for_sequence(model, tokenizer, text: str) -> mx.array:
 
 
 if __name__ == "__main__":
-    from mlx_lm import load
+    from cognition_engine.inference import load
 
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
 

@@ -5,8 +5,13 @@ The model is given a coding project and asked to build it step by step
 over many turns. We track entropy at each turn to find where degradation begins.
 """
 
-from engine.entropy import compute_token_entropy, get_logits_for_sequence
-from mlx_lm import load, generate
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from cognition_engine.entropy import compute_token_entropy, get_logits_for_sequence
+from cognition_engine.inference import load, generate
 import json
 import mlx.core as mx
 
