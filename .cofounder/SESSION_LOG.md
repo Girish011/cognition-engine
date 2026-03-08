@@ -191,3 +191,13 @@
   3. Open `data/full_degradation_graph.png` and add a one-line description of the 3 panels below.
 - **Real inflection turn (from full run):** **Turn 10.** `python scripts/find_inflection.py` on 20-turn data: moving average crossover at turn 10; maximum entropy increase at turn 13 (largest jump into turn 14). Entropy range 0.0182 — 1.3564. → **CHI would start Level 2 intervention around turn 10.**
 - **3-signal graph description (from full run):** X-axis 0–19 (20 turns). **Entropy:** low and stable for turns 0–9 (~0.02–0.07), then rises from turn 11 (0.08, 0.44, 0.46, 0.97, 0.90, 1.36, …). **Repetition:** rises through turn 9 (up to ~0.88), then turns 11–17 show 0 or 1.0 (short/variable responses). **Goal drift:** varies per turn (0.15–0.55), not pegged at 1.0. Clear degradation: entropy spike from ~turn 10 onward; inflection at turn 10.
+
+## 2026-03-08 (Week 3 — TASK-015: CHI score implementation)
+
+- TASK-015 — Implement CHI Score (Combining 3 Signals) — Completed
+- Created `engine/chi.py`: CHIMonitor class combining entropy (0.4), repetition (0.3), and goal drift (0.3) into a single CHI score 0.0–1.0. `update(current_response, full_context=None)` returns dict with chi_score, raw signals, and health components; `get_intervention_level()` returns 1–4 from smoothed CHI.
+- **Addition 1 — Gate repetition by response length:** If response has under 20 tokens, the previous turn’s repetition score is carried forward instead of computing Jaccard on tiny text (avoids noisy repetition panel swings on short replies).
+- **Addition 2 — Smooth CHI with exponential moving average:** `chi_smoothed = 0.3 * chi_current + 0.7 * chi_previous` (CHI_SMOOTH_ALPHA = 0.3). First turn uses raw CHI. Prevents wild single-turn swings from whipsawing the overall score; effective window ~3–5 turns.
+- Constants: `MIN_RESPONSE_TOKENS_FOR_REPETITION = 20`, `CHI_SMOOTH_ALPHA = 0.3`. Return dict includes `chi_raw` (unsmoothed) and `chi_score` (smoothed); history and intervention level use smoothed value.
+- Manual test: `python engine/chi.py` — Turn 0 CHI 0.934 Level 1, Turn 1 CHI 0.897 Level 1; passed.
+- Git: `TASK-015: CHI score combining 3 signals`

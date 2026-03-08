@@ -95,9 +95,9 @@
 
 ## CURRENT STATUS
 
-- **Week:** 2 of 16
+- **Week:** 3 of 16
 - **Phase:** Phase 0 — Foundations
-- **Current task:** TASK-008
+- **Current task:** FIX (full 20-turn 3-signal experiment), then TASK-015
 - **Blockers:** None
 
 ## WHAT'S BEEN BUILT
@@ -114,6 +114,17 @@
 - Attention weight extraction via replicated forward pass
 - Cosine similarity 0.7379 between code vs poetry (capture verified)
 - Hidden state shape: (1, seq_len, 3584), Attention: (1, 28, seq_len, seq_len)
+- ## WHAT'S BEEN BUILT
+- [x] Architecture research + adversarial critique (50+ papers)
+- [x] 16-week execution plan + co-founder continuity protocol
+- [x] WEEK 1: MLX inference + hidden state extraction
+      53 tok/s baseline, CaptureLayer wrapper, attention weights
+- [x] WEEK 2: Entropy + repetition + goal drift + degradation graphs
+      Inflection at ~turn 10. Full 3-signal graph needs rerun (goal drift bug).
+- [x] WEEK 2: Entropy + repetition + goal drift + degradation graphs
+      Inflection at turn 10. Three independent signals confirm degradation.
+- [ ] WEEK 3: CHI score + CLI + project structure + README
+
 
 ## KEY LEARNINGS
 
@@ -132,4 +143,9 @@
   only for side effect.
 - 2026-03-07: 53 tok/s on M4 Pro for 7B Q4 — significantly above 25-40 estimate.
   Qwen3.5-9B should still be fast enough for production use.
-  
+- 2026-03-08: Full 20-turn 3-signal experiment completed. Inflection at turn 10
+  (~2000-2500 tokens context). Entropy is strongest signal (clean regime change).
+  Goal drift fixed: use last-token hidden state for long sequences, not mean.
+  Repetition noisy for short responses — gate by response length in CHI.
+- 2026-03-08: For CHI design: use exponential moving average (3-5 turn window)
+  to smooth single-turn noise. Gate repetition signal when response < 20 tokens.

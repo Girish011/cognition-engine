@@ -739,6 +739,445 @@ if __name__ == "__main__":
 
 ---
 
-## WEEK 3: CHI Score + CLI Skeleton
+## WEEK 3: CHI Score + Project Skeleton + CLI
+**Goal:** By end of Week 3 you have a working CLI tool that monitors
+cognitive health in real-time as a model generates text. This is the
+first thing someone can `pip install` and use.
 
-(Detailed tasks added after Week 2 is complete)
+---
+
+### TASK-015: Implement CHI Score (Combining 3 Signals)
+**Status:** ✅ DONE
+**Do:** Create `engine/chi.py`
+
+CHI (Cognitive Health Index) combines your three signals into
+one number between 0 and 1. Higher = healthier.
+
+```python
+"""
+CHI — Cognitive Health Index
+
+Combines entropy, repetition, and goal drift into a single
+score from 0.0 (completely degraded) to 1.0 (fully healthy).
+
+The score is intentionally simple in v1. We can add more signals
+and tune weights later. What matters now is that it WORKS and
+DETECTS degradation.
+"""
+import mlx.core as mx
+from engine.entropy import compute_token_entropy, get_logits_for_sequence
+from engine.repetition import compute_repetition_score
+from engine.goal_drift import compute_goal_drift
+
+class CHIMonitor:
+    """
+    Tracks cognitive health across a conversation.
+    Call update() after each model response to get the current CHI score.
+    """
+    
+    def __init__(self, model, tokenizer, original_task: str,
+                 layer_idx: int = 27):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.original_task = original_task
+        self.layer_idx = layer_idx
+        
+        # History for tracking trends
+        self.entropy_history = []
+        self.repetition_history = []
+        self.drift_history = []
+        self.chi_history = []
+        self.previous_response = ""
+    
+    def update(self, current_response: str, full_context: str = None) -> dict:
+        """
+        Compute CHI after a new model response.
+        
+        Args:
+            current_response: The model's latest response text
+            full_context: The full conversation so far (for entropy)
+        
+        Returns: dict with chi_score and individual signal values
+        """
+        # --- Signal 1: Entropy ---
+        # Compute entropy on the response tokens
+        # Normalize to 0-1 range: entropy of 0 bits = 1.0 (healthy),
+        # entropy of 10+ bits = 0.0 (degraded)
+        # YOUR IMPLEMENTATION
+        
+        # --- Signal 2: Repetition ---
+        # Jaccard similarity vs previous response
+        # 0.0 repetition = 1.0 (healthy), 1.0 repetition = 0.0 (degraded)
+        # YOUR IMPLEMENTATION
+        
+        # --- Signal 3: Goal Drift ---
+        # 0.0 drift = 1.0 (healthy), 1.0 drift = 0.0 (degraded)
+        # YOUR IMPLEMENTATION
+        
+        # --- Combine into CHI ---
+        # Simple weighted average for v1
+        # Weights: entropy 0.4, repetition 0.3, goal_drift 0.3
+        # You can tune these after seeing real data
+        w_entropy = 0.4
+        w_repetition = 0.3
+        w_drift = 0.3
+        
+        # chi_score = w_entropy * entropy_health + w_repetition * rep_health + w_drift * drift_health
+        # YOUR IMPLEMENTATION
+        
+        # Update history
+        self.previous_response = current_response
+        
+        # Return detailed result
+        return {
+            "chi_score": chi_score,
+            "entropy_raw": entropy_raw,
+            "entropy_health": entropy_health,
+            "repetition_raw": repetition_raw,
+            "repetition_health": rep_health,
+            "drift_raw": drift_raw,
+            "drift_health": drift_health,
+            "turn": len(self.chi_history),
+        }
+    
+    def get_intervention_level(self) -> int:
+        """
+        Based on current CHI, return the intervention level.
+        1 = normal, 2 = steer, 3 = compact, 4 = escalate
+        """
+        if not self.chi_history:
+            return 1
+        chi = self.chi_history[-1]
+        if chi > 0.8:
+            return 1
+        elif chi > 0.5:
+            return 2  # Would trigger EasySteer in Phase 2
+        elif chi > 0.3:
+            return 3  # Would trigger context compaction in Phase 1
+        else:
+            return 4  # Would trigger cloud escalation
+```
+
+**Manual test:**
+```python
+monitor = CHIMonitor(model, tokenizer, "Build a TaskManager class")
+
+# Healthy response
+r1 = monitor.update("class TaskManager:\n    def __init__(self):\n        self.tasks = []")
+print(f"Turn 0 CHI: {r1['chi_score']:.3f} Level: {monitor.get_intervention_level()}")
+# Should be high (0.7+), Level 1
+
+# Simulate degraded response (repetitive, off-topic)
+r2 = monitor.update("I think we should consider the weather today. The weather is nice.")
+print(f"Turn 1 CHI: {r2['chi_score']:.3f} Level: {monitor.get_intervention_level()}")
+# Should be lower, possibly Level 2 or 3
+```
+
+**Time:** 3-4 hours
+**Git:** `git commit -m "TASK-015: CHI score combining 3 signals"`
+
+---
+
+### TASK-016: Validate CHI Against Your Week 2 Data
+**Status:** ⬜ TODO
+**Do:** Create `scripts/validate_chi.py`
+
+Run CHI retroactively on your 20-turn multi-turn data.
+This validates that CHI actually detects the degradation
+you already proved exists in Week 2.
+
+```python
+"""
+Replay the 20-turn experiment through CHI and verify it detects
+the degradation inflection point found in TASK-014.
+"""
+# Load the saved responses from full_degradation.json
+# Create a CHIMonitor
+# Feed each response through update()
+# Plot CHI over turns alongside the raw signals
+# Verify: CHI drops below 0.7 around the inflection turn
+```
+
+Generate a graph: `data/chi_validation.png`
+- Top panel: CHI score over turns (with threshold lines at 0.8, 0.5, 0.3)
+- Bottom panel: The three raw signals for comparison
+
+**Manual test:**
+- CHI starts high (>0.7) in early turns
+- CHI drops in later turns, roughly around the inflection point from TASK-014
+- Intervention levels printed make sense (Level 1 early, Level 2-3 later)
+
+**Time:** 2-3 hours
+**Git:** `git commit -m "TASK-016: CHI validated against real degradation data"`
+
+---
+
+### TASK-017: Project Structure Cleanup
+**Status:** ⬜ TODO
+**Do:** Reorganize the project into a proper Python package.
+
+```
+cognition-engine/
+├── .cofounder/           # Co-founder protocol files
+│   ├── COFOUNDER_BRAIN.md
+│   ├── SESSION_LOG.md
+│   └── TASKS.md
+├── cognition_engine/     # Main package (rename from engine/)
+│   ├── __init__.py       # Version, package-level imports
+│   ├── chi.py            # CHI monitor
+│   ├── entropy.py        # Entropy computation
+│   ├── hidden_states.py  # Hidden state extraction
+│   ├── attention_weights.py  # Attention weight capture
+│   ├── repetition.py     # Repetition detection
+│   ├── goal_drift.py     # Goal drift measurement
+│   └── inference.py      # Model loading + basic generation
+├── scripts/              # Experiments and one-off scripts
+│   ├── benchmark.py
+│   ├── multiturn_entropy.py
+│   ├── full_degradation_experiment.py
+│   ├── find_inflection.py
+│   ├── validate_chi.py
+│   └── visualize_degradation.py
+├── data/                 # Experiment outputs (gitignored except READMEs)
+│   ├── .gitkeep
+│   └── *.json / *.png
+├── tests/                # Unit tests
+│   ├── __init__.py
+│   ├── test_entropy.py
+│   └── test_repetition.py
+├── pyproject.toml        # Package config
+├── README.md             # THE readme (start drafting)
+├── .gitignore
+└── LICENSE               # MIT
+```
+
+Key changes:
+- Rename `engine/` → `cognition_engine/` (Python convention: underscores)
+- Update all imports across scripts
+- Create `pyproject.toml` with basic metadata
+- Create `.gitignore` (exclude data/*.json, data/*.png, .venv/, __pycache__/)
+- Create `cognition_engine/__init__.py` with `__version__ = "0.1.0"`
+
+**Manual test:** From project root, these should all work:
+```bash
+python -c "from cognition_engine.chi import CHIMonitor; print('OK')"
+python -c "from cognition_engine.entropy import compute_token_entropy; print('OK')"
+python scripts/full_degradation_experiment.py --max-turns 2
+```
+
+**Time:** 2-3 hours (mostly updating imports and testing)
+**Git:** `git commit -m "TASK-017: restructure as proper Python package"`
+
+---
+
+### TASK-018: Basic CLI
+**Status:** ⬜ TODO
+**Do:** Create `cognition_engine/cli.py`
+
+A simple CLI that lets someone run Cognition Engine from the terminal.
+v1 is minimal: load model, chat, show CHI score after each response.
+
+```python
+"""
+cognition-engine CLI — v0.1
+
+Usage:
+    python -m cognition_engine.cli --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+    
+    Then type your task. The model responds. CHI score shown after each turn.
+"""
+import argparse
+from mlx_lm import load, generate
+from cognition_engine.chi import CHIMonitor
+
+def main():
+    parser = argparse.ArgumentParser(description="Cognition Engine — AI that monitors its own brain")
+    parser.add_argument("--model", default="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+                        help="Model path or HuggingFace repo")
+    parser.add_argument("--max-tokens", type=int, default=500,
+                        help="Max tokens per response")
+    args = parser.parse_args()
+    
+    print("Loading model...")
+    model, tokenizer = load(args.model)
+    print(f"Model loaded. Type your task. Ctrl+C to quit.\n")
+    
+    monitor = None
+    conversation = ""
+    
+    while True:
+        try:
+            user_input = input("\033[94mYou:\033[0m ")  # Blue prompt
+            if not user_input.strip():
+                continue
+            
+            # Initialize CHI monitor on first input
+            if monitor is None:
+                monitor = CHIMonitor(model, tokenizer, user_input)
+            
+            # Build conversation
+            conversation += f"\nUser: {user_input}\nAssistant: "
+            
+            # Generate
+            response = generate(model, tokenizer, prompt=conversation,
+                              max_tokens=args.max_tokens)
+            conversation += response
+            
+            # Show response
+            print(f"\033[92mAssistant:\033[0m {response}")  # Green
+            
+            # Compute CHI
+            result = monitor.update(response, conversation)
+            level = monitor.get_intervention_level()
+            
+            # Color-coded CHI display
+            chi = result['chi_score']
+            if chi > 0.8:
+                color = "\033[92m"  # Green
+            elif chi > 0.5:
+                color = "\033[93m"  # Yellow
+            else:
+                color = "\033[91m"  # Red
+            
+            print(f"\n{color}[CHI: {chi:.3f} | Level {level}]\033[0m "
+                  f"E={result['entropy_health']:.2f} "
+                  f"R={result['repetition_health']:.2f} "
+                  f"D={result['drift_health']:.2f}\n")
+            
+        except KeyboardInterrupt:
+            print("\n\nSession ended.")
+            if monitor and monitor.chi_history:
+                print(f"Turns: {len(monitor.chi_history)}")
+                print(f"Final CHI: {monitor.chi_history[-1]:.3f}")
+                print(f"Min CHI: {min(monitor.chi_history):.3f}")
+            break
+
+if __name__ == "__main__":
+    main()
+```
+
+Also create `cognition_engine/__main__.py`:
+```python
+from cognition_engine.cli import main
+main()
+```
+
+**Manual test:**
+```bash
+python -m cognition_engine --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+```
+- Model loads
+- You can type a task
+- Model responds
+- CHI score shown in color (green/yellow/red) after each response
+- Ctrl+C exits cleanly with summary stats
+
+**Time:** 2-3 hours
+**Git:** `git commit -m "TASK-018: basic CLI with real-time CHI display"`
+
+---
+
+### TASK-019: Write Basic Tests
+**Status:** ⬜ TODO
+**Do:** Create `tests/test_entropy.py` and `tests/test_repetition.py`
+
+These are quick sanity tests — NOT model-dependent (they run without loading a model).
+
+```python
+# tests/test_entropy.py
+import mlx.core as mx
+from cognition_engine.entropy import compute_token_entropy
+
+def test_uniform_distribution_high_entropy():
+    """Uniform distribution over vocab should give high entropy."""
+    vocab_size = 1000
+    logits = mx.zeros((1, 1, vocab_size))  # All equal = uniform after softmax
+    entropy = compute_token_entropy(logits)
+    mx.eval(entropy)
+    # log2(1000) ≈ 9.97, so entropy should be close to ~10
+    assert entropy.item() > 9.0, f"Uniform entropy should be high, got {entropy.item()}"
+
+def test_peaked_distribution_low_entropy():
+    """One dominant logit should give low entropy."""
+    vocab_size = 1000
+    logits = mx.zeros((1, 1, vocab_size))
+    logits = logits.at[0, 0, 0].add(100.0)  # One huge logit
+    entropy = compute_token_entropy(logits)
+    mx.eval(entropy)
+    assert entropy.item() < 1.0, f"Peaked entropy should be low, got {entropy.item()}"
+
+def test_entropy_shape():
+    """Entropy should have shape (seq_len,)."""
+    logits = mx.zeros((1, 5, 100))
+    entropy = compute_token_entropy(logits)
+    mx.eval(entropy)
+    assert entropy.shape == (5,), f"Expected (5,), got {entropy.shape}"
+```
+
+```python
+# tests/test_repetition.py
+from cognition_engine.repetition import compute_repetition_score, compute_self_repetition
+
+def test_identical_texts():
+    score = compute_repetition_score("the quick brown fox jumps", "the quick brown fox jumps")
+    assert score == 1.0
+
+def test_completely_different():
+    score = compute_repetition_score(
+        "the quick brown fox jumps over the lazy dog today",
+        "python is a great programming language for beginners"
+    )
+    assert score < 0.1
+
+def test_self_repetition_repeated_text():
+    repeated = " ".join(["hello world foo bar"] * 20)
+    score = compute_self_repetition(repeated, window_size=20)
+    assert score > 0.8, f"Highly repeated text should score high, got {score}"
+```
+
+Run with: `python -m pytest tests/ -v`
+(Install pytest first: `pip install pytest`)
+
+**Manual test:** All tests pass.
+**Time:** 1-2 hours
+**Git:** `git commit -m "TASK-019: basic unit tests for entropy and repetition"`
+
+---
+
+### TASK-020: Draft README
+**Status:** ⬜ TODO
+**Do:** Create `README.md` in project root.
+
+This is your marketing page. Structure:
+
+1. **One-liner + badge** — "A local AI coding agent that monitors its own brain"
+2. **The graph** — your degradation_graph.png showing where the model breaks
+3. **What it does** — 3 bullet points max
+4. **Quick start** — 4 lines to install and run
+5. **How it works** — brief explanation of CHI (link to docs for detail)
+6. **Why this exists** — 1 paragraph on the problem (39% multi-turn degradation)
+7. **Roadmap** — what's coming (activation steering, LoRA)
+8. **License** — MIT
+
+Keep it SHORT. People decide in 10 seconds whether to star a repo.
+The graph is the hook. The quick start is the conversion.
+
+Put your best degradation graph in the repo root or `assets/` folder
+and reference it in the README.
+
+**Manual test:** Read it as if you've never heard of Cognition Engine.
+Does it make you want to try it in under 30 seconds?
+
+**Time:** 2-3 hours (writing good README is hard — take time on this)
+**Git:** `git commit -m "TASK-020: README with degradation graph and quick start"`
+
+---
+
+## WEEK 3 CHECKLIST
+- [ ] FIX: Full 20-turn 3-signal experiment (see FIX_BEFORE_WEEK3.md) (1-2 hrs)
+- [x] TASK-015: CHI score implementation (3-4 hrs)
+- [ ] TASK-016: Validate CHI against real data (2-3 hrs)
+- [ ] TASK-017: Project restructure (2-3 hrs)
+- [ ] TASK-018: Basic CLI with CHI display (2-3 hrs)
+- [ ] TASK-019: Unit tests (1-2 hrs)
+- [ ] TASK-020: README draft (2-3 hrs)

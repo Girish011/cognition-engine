@@ -19,7 +19,18 @@ Three signals over conversation turns: **entropy** (how confident/confused the m
 | **Middle (green)** | **Repetition vs previous** (Jaccard) | **Up = worse.** Compares this turn’s reply to the last. Higher = more copy-paste, less new content. |
 | **Bottom (red)** | **Goal drift** (1 − similarity) | **Up = worse.** How far the current response is from the original task in “hidden space.” 0 = on-task, 1 = fully drifted. |
 
-**X-axis:** Turn number (each step in the multi-turn coding conversation).
+**X-axis:** Turn number (each step in the multi-turn coding conversation). Full run = 20 turns (0–19).
+
+---
+
+## Latest run (20-turn full experiment)
+
+- **Inflection turn:** **10** — degradation likely begins here; CHI would start Level 2 intervention around this turn.
+- **Entropy:** Low and stable for turns 0–9; rises from ~turn 10 onward (clear spike).
+- **Repetition:** Rises through early turns; later turns can show 0 or 1.0 when responses are short or variable.
+- **Goal drift:** Varies by turn (not pegged at 1.0); computed from hidden-state similarity (forward-only, last-token for long responses).
+
+To recompute the inflection from current data: `python scripts/find_inflection.py` (from project root).
 
 ---
 
@@ -48,4 +59,8 @@ From project root:
 - **Plot only** (redraw from existing `full_degradation.json`, no model run):
   ```bash
   python scripts/full_degradation_experiment.py --plot-only
+  ```
+- **Find inflection turn** (after you have `full_degradation.json` with ≥7 turns):
+  ```bash
+  python scripts/find_inflection.py
   ```
