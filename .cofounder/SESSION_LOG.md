@@ -143,3 +143,10 @@
   - Default `layer_idx=27` (last layer) so on-task > off-task in manual test; layer 16 gave near-identical scores.
 - Manual test: on-task 0.89, off-task 0.82; assert score_on > score_off passes. Path fix for `python engine/goal_drift.py` (project root on sys.path).
 - Git: `TASK-011: goal drift detection via hidden state similarity`
+
+## 2026-03-07 (Week 2 — TASK-012: Degradation visualization)
+
+- TASK-012 — Visualize Degradation (The Money Graph) — Completed
+- Created `scripts/visualize_degradation.py`: reads `data/multiturn_entropy.json`, plots 2 panels (entropy mean + fill to max over turns; context length over turns), saves `data/degradation_graph.png`. Uses matplotlib Agg backend. `pip install matplotlib` required.
+- Manual test: script runs from project root, outputs "Saved: data/degradation_graph.png". Graph shows entropy and context growth over 20 turns.
+- Git: `TASK-012: degradation visualization`

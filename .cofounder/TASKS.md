@@ -549,7 +549,7 @@ assert score_on > score_off, "On-task should be closer to original task"
 ---
 
 ### TASK-012: Visualize Degradation (The Money Graph)
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `scripts/visualize_degradation.py`
 
 This is the graph that goes in your README, your blog post, your pitch.
@@ -733,7 +733,7 @@ if __name__ == "__main__":
 - [x] TASK-009: Multi-turn entropy experiment (3-4 hrs)
 - [x] TASK-010: Repetition detection — Jaccard (1-2 hrs)
 - [x] TASK-011: Goal drift detection (1-2 hrs)
-- [ ] TASK-012: Degradation visualization (1-2 hrs)
+- [x] TASK-012: Degradation visualization (1-2 hrs)
 - [ ] TASK-013: Full 3-signal experiment (2-3 hrs)
 - [ ] TASK-014: Find inflection point (1-2 hrs)
 
