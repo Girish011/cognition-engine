@@ -219,3 +219,18 @@
 - Added `pyproject.toml` (name=cognition-engine, version 0.1.0, deps mlx/mlx-lm, setuptools), `.gitignore` (data/*.json, data/*.png, kept data/.gitkeep and data/*README*), `data/.gitkeep`, `tests/__init__.py`, `tests/test_entropy.py`, `tests/test_repetition.py`, `README.md` (draft), `LICENSE` (MIT).
 - Deleted `engine/` (all modules moved). Manual tests from project root: `python -c "from cognition_engine.chi import CHIMonitor; print('OK')"`, `python -c "from cognition_engine.entropy import compute_token_entropy; print('OK')"`, `python scripts/full_degradation_experiment.py --max-turns 2` — all passed. `pytest tests/` — 8 passed.
 - Git: `TASK-017: restructure as proper Python package`
+
+## 2026-03-08 (Week 3 — TASK-018: Basic CLI)
+
+- TASK-018 — Basic CLI — Completed
+- Created `cognition_engine/cli.py`: interactive chat loop with `python -m cognition_engine` (or `python -m cognition_engine.cli`). Loads model via `--model` (default Qwen2.5-Coder-7B-Instruct-4bit), `--max-tokens` (default 500). First user message becomes `original_task` for CHIMonitor; each turn: generate response, `monitor.update(response, conversation)`, color-coded CHI line (green >0.8, yellow >0.5, red otherwise) with E/R/D health components. Ctrl+C exits with summary: turns, final CHI, min CHI.
+- Created `cognition_engine/__main__.py`: `from cognition_engine.cli import main; main()` so `python -m cognition_engine` runs the CLI.
+- Manual test: `python -m cognition_engine --help` runs (with venv). Full interactive test: `python -m cognition_engine --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` — model loads, type task, model responds, CHI shown; Ctrl+C for summary.
+- Git: `TASK-018: basic CLI with real-time CHI display`
+
+## 2026-03-08 (CLI 16-turn run — CHI results)
+
+- **Run:** `python -m cognition_engine` with Qwen2.5-Coder-7B-Instruct-4bit; 16 turns, Ctrl+C exit.
+- **CHI:** Min 0.715, Final 0.777. Mostly Level 2 (15/16 turns); one turn Level 1 (CHI 0.813, short “spell orange” reply).
+- **Topics:** Tamil Nadu history → sea-level/sinking → formula → research paper → Tamil politics → context window → spelling → long email-server/dual-NIC/PBR thread → foobar rhyming script.
+- **Observations:** Model drifted: after topic changes (e.g. dual-NIC routing, then foobar), responses often repeated “VPN / cloud email / DNS” or generic PBR text; foobar answer was standard (no rhyming). Repetition (R) and drift (D) dipped when answers were off-topic or recycled (e.g. R=0.22, 0.57). CLI and CHI display behaved as intended; summary on exit: Turns 16, Final CHI 0.777, Min CHI 0.715.

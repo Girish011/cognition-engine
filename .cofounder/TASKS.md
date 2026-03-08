@@ -971,7 +971,7 @@ python scripts/full_degradation_experiment.py --max-turns 2
 ---
 
 ### TASK-018: Basic CLI
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/cli.py`
 
 A simple CLI that lets someone run Cognition Engine from the terminal.
@@ -1178,6 +1178,6 @@ Does it make you want to try it in under 30 seconds?
 - [x] TASK-015: CHI score implementation (3-4 hrs)
 - [x] TASK-016: Validate CHI against real data (2-3 hrs)
 - [x] TASK-017: Project restructure (2-3 hrs)
-- [ ] TASK-018: Basic CLI with CHI display (2-3 hrs)
+- [x] TASK-018: Basic CLI with CHI display (2-3 hrs)
 - [ ] TASK-019: Unit tests (1-2 hrs)
 - [ ] TASK-020: README draft (2-3 hrs)
