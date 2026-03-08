@@ -241,3 +241,10 @@
 - Added TASK-019–spec tests to existing `tests/test_entropy.py` and `tests/test_repetition.py` (no model load). Entropy: `test_uniform_distribution_high_entropy` (vocab 1000, zeros → entropy > 9), `test_peaked_distribution_low_entropy` (one dominant logit → entropy < 1), `test_entropy_shape` (1,5,100 → shape (5,)). Repetition: `test_identical_texts` (Jaccard 1.0), `test_completely_different` (< 0.1), `test_self_repetition_repeated_text` (repeated phrase, window 20 → score > 0.8).
 - `python -m pytest tests/ -v`: 14 passed (6 entropy, 8 repetition).
 - Git: `TASK-019: basic unit tests for entropy and repetition`
+
+## 2026-03-08 (Week 3 — TASK-020: Draft README)
+
+- TASK-020 — Draft README — Completed
+- Rewrote `README.md` per task spec: one-liner + MIT badge; “The graph” section with `data/full_degradation_graph.png` (3-signal degradation); 3 bullet points (CHI, intervention levels, CLI); 4-line quick start (clone, pip install, run `python -m cognition_engine`); short “How it works” (CHI = entropy + repetition + goal drift, link to COFOUNDER_BRAIN); “Why this exists” paragraph (39% multi-turn degradation, local models, detect-and-intervene); roadmap (activation steering, context compaction, LoRA crystallization); MIT license.
+- Allowed `data/full_degradation_graph.png` in `.gitignore` so the graph can be committed and shown in the README after running `scripts/full_degradation_experiment.py`.
+- Git: `TASK-020: README with degradation graph and quick start`

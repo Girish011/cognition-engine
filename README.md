@@ -1,50 +1,64 @@
 # Cognition Engine
 
-A local AI coding agent that **monitors its own cognitive health** and self-corrects when degrading. Built on MLX for Apple Silicon.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## One-liner
+**A local AI coding agent that monitors its own brain.**
 
-"A local AI that never forgets what it's doing."
+Multi-turn coding sessions degrade: models repeat themselves, drift off-task, and lose coherence. Cognition Engine runs on your Mac (MLX), tracks **cognitive health** in real time, and is built to trigger interventions (steering, context compaction, escalation) when quality drops.
+
+---
+
+## The graph
+
+This is what degradation looks like over a 20-turn conversation. Entropy and goal drift rise; repetition spikes. CHI (Cognitive Health Index) combines these into one score so the system knows when to act.
+
+![Degradation over 20 turns: entropy, repetition, goal drift](data/full_degradation_graph.png)
+
+*Generate it: `python scripts/full_degradation_experiment.py` (output in `data/`).*
+
+---
 
 ## What it does
 
-- **CHI (Cognitive Health Index)** — Combines entropy, repetition, and goal drift into a single score (0–1). High = healthy; low = degraded.
-- **Intervention levels** — When CHI drops, the system can trigger steering, context compaction, or escalation (see docs).
-- **MLX native** — Uses Apple's MLX for inference and hidden-state access (no Ollama wrapper).
+- **CHI score (0–1)** — One number from entropy, repetition, and goal drift. High = healthy; low = degraded.
+- **Intervention levels** — Level 1 (normal) → 2 (steer) → 3 (compact context) → 4 (escalate). Thresholds drive when to intervene.
+- **CLI with live CHI** — Chat with the model from the terminal; see CHI and E/R/D after every reply.
+
+---
 
 ## Quick start
 
 ```bash
+git clone <your-repo>
 cd cognition-engine
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -e .
 pip install mlx mlx-lm
+python -m cognition_engine --model mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
 ```
 
-From project root:
+Type a task, get a response, see CHI. Ctrl+C to quit.
 
-```bash
-python -c "from cognition_engine.chi import CHIMonitor; print('OK')"
-python scripts/full_degradation_experiment.py --max-turns 2
-```
+---
 
-## Project layout
+## How it works
 
-- **cognition_engine/** — Main package: `chi`, `entropy`, `repetition`, `goal_drift`, `hidden_states`, `inference`
-- **scripts/** — Experiments and one-off scripts (multi-turn entropy, degradation, validation)
-- **data/** — Experiment outputs (graphs, JSON)
-- **tests/** — Unit tests
+CHI is a weighted mix of three signals: **entropy** (next-token uncertainty), **repetition** (Jaccard between consecutive responses), and **goal drift** (hidden-state similarity to the original task). The score is smoothed over turns and mapped to intervention levels. Details: [.cofounder/COFOUNDER_BRAIN.md](.cofounder/COFOUNDER_BRAIN.md) and code in `cognition_engine/chi.py`.
 
-## How CHI works
+---
 
-CHI v1 is a weighted combination of three signals:
+## Why this exists
 
-1. **Entropy** — Shannon entropy over the next-token distribution (low = confident, high = confused).
-2. **Repetition** — Jaccard similarity between consecutive responses (high = stuck repeating).
-3. **Goal drift** — Cosine similarity of hidden states (current output vs original task).
+Studies show large multi-turn coding sessions suffer **~39% degradation** in correctness and coherence. Local models are especially prone: long context, no built-in “am I still on task?” check. Cognition Engine is built to detect when the model’s brain is drifting or looping, so a future layer can steer, compact context, or hand off to a stronger model—instead of failing silently.
 
-The score is smoothed over turns and used to select an intervention level (1 = normal, 2 = steer, 3 = compact, 4 = escalate).
+---
+
+## Roadmap
+
+- **Activation steering** — Use hidden states to nudge the model back on task (EasySteer-style).
+- **Context compaction** — Shrink working context when CHI drops while keeping task anchors.
+- **LoRA crystallization** — Nightly fine-tuning on session data to improve the local model over time.
+
+---
 
 ## License
 

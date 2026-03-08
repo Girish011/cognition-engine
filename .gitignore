@@ -9,5 +9,6 @@ __pycache__/
 # Data outputs (keep READMEs and .gitkeep)
 data/*.json
 data/*.png
+!data/full_degradation_graph.png
 !data/.gitkeep
 !data/*README*
