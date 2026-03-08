@@ -39,3 +39,27 @@ def test_self_repetition_high_for_repeated():
     long_repeat = "word " * 250
     score = compute_self_repetition(long_repeat, window_size=100)
     assert score >= 0.99
+
+
+def test_identical_texts():
+    """Identical texts should give Jaccard 1.0."""
+    score = compute_repetition_score(
+        "the quick brown fox jumps", "the quick brown fox jumps"
+    )
+    assert score == 1.0
+
+
+def test_completely_different():
+    """Completely different texts should give Jaccard < 0.1."""
+    score = compute_repetition_score(
+        "the quick brown fox jumps over the lazy dog today",
+        "python is a great programming language for beginners",
+    )
+    assert score < 0.1
+
+
+def test_self_repetition_repeated_text():
+    """Highly repeated phrase should give high self-repetition score."""
+    repeated = " ".join(["hello world foo bar"] * 20)
+    score = compute_self_repetition(repeated, window_size=20)
+    assert score > 0.8, f"Highly repeated text should score high, got {score}"

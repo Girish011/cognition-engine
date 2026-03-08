@@ -234,3 +234,10 @@
 - **CHI:** Min 0.715, Final 0.777. Mostly Level 2 (15/16 turns); one turn Level 1 (CHI 0.813, short “spell orange” reply).
 - **Topics:** Tamil Nadu history → sea-level/sinking → formula → research paper → Tamil politics → context window → spelling → long email-server/dual-NIC/PBR thread → foobar rhyming script.
 - **Observations:** Model drifted: after topic changes (e.g. dual-NIC routing, then foobar), responses often repeated “VPN / cloud email / DNS” or generic PBR text; foobar answer was standard (no rhyming). Repetition (R) and drift (D) dipped when answers were off-topic or recycled (e.g. R=0.22, 0.57). CLI and CHI display behaved as intended; summary on exit: Turns 16, Final CHI 0.777, Min CHI 0.715.
+
+## 2026-03-08 (Week 3 — TASK-019: Basic unit tests)
+
+- TASK-019 — Write Basic Tests — Completed
+- Added TASK-019–spec tests to existing `tests/test_entropy.py` and `tests/test_repetition.py` (no model load). Entropy: `test_uniform_distribution_high_entropy` (vocab 1000, zeros → entropy > 9), `test_peaked_distribution_low_entropy` (one dominant logit → entropy < 1), `test_entropy_shape` (1,5,100 → shape (5,)). Repetition: `test_identical_texts` (Jaccard 1.0), `test_completely_different` (< 0.1), `test_self_repetition_repeated_text` (repeated phrase, window 20 → score > 0.8).
+- `python -m pytest tests/ -v`: 14 passed (6 entropy, 8 repetition).
+- Git: `TASK-019: basic unit tests for entropy and repetition`
