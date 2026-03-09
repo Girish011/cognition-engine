@@ -248,3 +248,11 @@
 - Rewrote `README.md` per task spec: one-liner + MIT badge; “The graph” section with `data/full_degradation_graph.png` (3-signal degradation); 3 bullet points (CHI, intervention levels, CLI); 4-line quick start (clone, pip install, run `python -m cognition_engine`); short “How it works” (CHI = entropy + repetition + goal drift, link to COFOUNDER_BRAIN); “Why this exists” paragraph (39% multi-turn degradation, local models, detect-and-intervene); roadmap (activation steering, context compaction, LoRA crystallization); MIT license.
 - Allowed `data/full_degradation_graph.png` in `.gitignore` so the graph can be committed and shown in the README after running `scripts/full_degradation_experiment.py`.
 - Git: `TASK-020: README with degradation graph and quick start`
+
+## 2026-03-09 (Week 4 — TASK-021: Context compaction engine)
+
+- TASK-021 — Context Compaction Engine — Completed
+- Created `cognition_engine/compaction.py` with `ContextCompactor` managing conversation turns, anchor text, and automatic compaction when context length or CHI demands it.
+- Implemented three strategies: `trim` (keep anchor + last N turns, no model call), `summarize` (model-generated `[CONTEXT SUMMARY]` of older turns, keep recent 5 turns verbatim), and `anchor_reset` (anchor + last 2 turns only).
+- `compact(strategy="auto")` tries trim → summarize → anchor_reset until context falls under `max_context_tokens` (~75% of 32K by default) and increments `compaction_count`. `needs_compaction(chi_score)` triggers on token limit or CHI < 0.5.
+- Manual scaffold in `__main__`: simulates a 20-turn conversation; `python -m cognition_engine.compaction` from the project venv printed **"Before compaction: 7531 tokens"** and **"After trim: 1006 tokens"**, confirming that `needs_compaction()` triggers on long context, `compact("trim")` dramatically reduces token count, and the rebuilt context still contains the TaskManager anchor text.

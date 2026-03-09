@@ -1182,7 +1182,7 @@ all future features build on.
 ---
 
 ### TASK-021: Context Compaction Engine
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/compaction.py`
 
 When context gets too long or CHI drops below 0.5, we need to compress
@@ -2026,7 +2026,7 @@ assert len(memory2.notes) == 3
 ---
 
 ## WEEK 4 CHECKLIST
-- [ ] TASK-021: Context compaction engine (3-4 hrs)
+- [x] TASK-021: Context compaction engine (3-4 hrs)
 - [ ] TASK-022: SCAN-style anchor tokens (1-2 hrs)
 - [ ] TASK-023: Tool-calling agent loop (4-5 hrs)
 - [ ] TASK-024: Tool-call prompt format + parser (2-3 hrs)
