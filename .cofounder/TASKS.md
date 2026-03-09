@@ -1320,7 +1320,7 @@ assert "TaskManager" in context
 ---
 
 ### TASK-022: SCAN-Style Anchor Tokens
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/anchors.py`
 
 SCAN (System Compliance Awareness Notes) are periodic reminders
@@ -2027,7 +2027,7 @@ assert len(memory2.notes) == 3
 
 ## WEEK 4 CHECKLIST
 - [x] TASK-021: Context compaction engine (3-4 hrs)
-- [ ] TASK-022: SCAN-style anchor tokens (1-2 hrs)
+- [x] TASK-022: SCAN-style anchor tokens (1-2 hrs)
 - [ ] TASK-023: Tool-calling agent loop (4-5 hrs)
 - [ ] TASK-024: Tool-call prompt format + parser (2-3 hrs)
 - [ ] TASK-025: Integration test (3-4 hrs)

@@ -256,3 +256,10 @@
 - Implemented three strategies: `trim` (keep anchor + last N turns, no model call), `summarize` (model-generated `[CONTEXT SUMMARY]` of older turns, keep recent 5 turns verbatim), and `anchor_reset` (anchor + last 2 turns only).
 - `compact(strategy="auto")` tries trim → summarize → anchor_reset until context falls under `max_context_tokens` (~75% of 32K by default) and increments `compaction_count`. `needs_compaction(chi_score)` triggers on token limit or CHI < 0.5.
 - Manual scaffold in `__main__`: simulates a 20-turn conversation; `python -m cognition_engine.compaction` from the project venv printed **"Before compaction: 7531 tokens"** and **"After trim: 1006 tokens"**, confirming that `needs_compaction()` triggers on long context, `compact("trim")` dramatically reduces token count, and the rebuilt context still contains the TaskManager anchor text.
+
+## 2026-03-09 (Week 4 — TASK-022: SCAN-style anchor tokens)
+
+- TASK-022 — SCAN-Style Anchor Tokens — Completed
+- Created `cognition_engine/anchors.py` with `AnchorManager` generating three reminder levels: `FULL` (full-context restoration block with original task, last 5 key decisions, and last 10 modified files), `MINI` (short `[REMINDER]` line with task snippet, counts of decisions/files), and `ANCHOR` (one-line `[FOCUS]` reminder).
+- `add_decision()` and `add_file()` track evolving context so anchors stay grounded in actual work; `get_anchor_for_chi(chi_score)` maps CHI ranges to levels: `None` (>0.8), `ANCHOR` (0.6–0.8), `MINI` (0.4–0.6), `FULL` (≤0.4).
+- Manual scaffold in `__main__`: constructs an `AnchorManager` for "Build a REST API with Flask", adds two decisions and two files, prints each anchor level, and asserts CHI-based selection returns `None`, a `[FOCUS]` line, a `[REMINDER]` line, and a `FULL CONTEXT` block respectively before printing "AnchorManager manual scaffold passed."
