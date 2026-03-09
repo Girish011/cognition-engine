@@ -95,9 +95,9 @@
 
 ## CURRENT STATUS
 
-- **Week:** 3 of 16
-- **Phase:** Phase 0 — Foundations
-- **Current task:** FIX (full 20-turn 3-signal experiment), then TASK-015
+- **Week:** 4 of 16
+- **Phase:** Phase 1 — Free Product
+- **Current task:** Awaiting Week 4 tasks
 - **Blockers:** None
 
 ## WHAT'S BEEN BUILT
@@ -114,16 +114,19 @@
 - Attention weight extraction via replicated forward pass
 - Cosine similarity 0.7379 between code vs poetry (capture verified)
 - Hidden state shape: (1, seq_len, 3584), Attention: (1, 28, seq_len, seq_len)
-- ## WHAT'S BEEN BUILT
+  
+## WHAT'S BEEN BUILT
 - [x] Architecture research + adversarial critique (50+ papers)
 - [x] 16-week execution plan + co-founder continuity protocol
 - [x] WEEK 1: MLX inference + hidden state extraction
-      53 tok/s baseline, CaptureLayer wrapper, attention weights
+      53 tok/s, CaptureLayer wrapper, attention weights (1,28,seq,seq)
 - [x] WEEK 2: Entropy + repetition + goal drift + degradation graphs
-      Inflection at ~turn 10. Full 3-signal graph needs rerun (goal drift bug).
-- [x] WEEK 2: Entropy + repetition + goal drift + degradation graphs
-      Inflection at turn 10. Three independent signals confirm degradation.
-- [ ] WEEK 3: CHI score + CLI + project structure + README
+      Inflection at turn 10 (~2500 tokens). Three signals confirm degradation.
+- [x] WEEK 3: CHI score + CLI + project structure + README
+      CHI validated: detects degradation at turn 11 (matches inflection).
+      EMA smoothing + repetition gating. 14 tests. CLI with color-coded CHI.
+      Package restructured as cognition_engine/. README with graph.
+- [ ] WEEK 4-6: Context management, agent loop, open source launch
 
 
 ## KEY LEARNINGS
@@ -149,3 +152,8 @@
   Repetition noisy for short responses — gate by response length in CHI.
 - 2026-03-08: For CHI design: use exponential moving average (3-5 turn window)
   to smooth single-turn noise. Gate repetition signal when response < 20 tokens.
+- 2026-03-08: CHI validated against real data. Crosses 0.7 threshold at turn 11,
+  matching TASK-014 inflection (turn 10). EMA smoothing (α=0.3) handles noisy
+  repetition signal. 16-turn interactive CLI test confirmed real-world behavior.
+- 2026-03-08: Phase 0 complete. Foundation: hidden states, entropy, repetition,
+  goal drift, CHI, CLI, tests, README. All working end-to-end.
