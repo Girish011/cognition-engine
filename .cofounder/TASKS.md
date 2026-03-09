@@ -1173,11 +1173,896 @@ Does it make you want to try it in under 30 seconds?
 
 ---
 
-## WEEK 3 CHECKLIST
-- [ ] FIX: Full 20-turn 3-signal experiment (see FIX_BEFORE_WEEK3.md) (1-2 hrs)
-- [x] TASK-015: CHI score implementation (3-4 hrs)
-- [x] TASK-016: Validate CHI against real data (2-3 hrs)
-- [x] TASK-017: Project restructure (2-3 hrs)
-- [x] TASK-018: Basic CLI with CHI display (2-3 hrs)
-- [x] TASK-019: Unit tests (1-2 hrs)
-- [x] TASK-020: README draft (2-3 hrs)
+## WEEK 4: Context Compaction + Agent Loop
+**Goal:** Build a coding agent that can read/write files, execute commands,
+and automatically manage its own context when CHI drops. This is the
+Level 3 intervention (context compaction) and the agent skeleton that
+all future features build on.
+
+---
+
+### TASK-021: Context Compaction Engine
+**Status:** ⬜ TODO
+**Do:** Create `cognition_engine/compaction.py`
+
+When context gets too long or CHI drops below 0.5, we need to compress
+the conversation without losing critical information. This is Level 3
+of the intervention ladder.
+
+Three compaction strategies, applied in order of severity:
+
+```python
+"""
+Context Compaction — Level 3 Intervention
+
+When CHI drops or context is approaching the model's limit,
+compress the conversation to restore coherence.
+"""
+import mlx.core as mx
+from mlx_lm import load, generate
+
+class ContextCompactor:
+    """Manages conversation context with automatic compaction."""
+    
+    def __init__(self, model, tokenizer, max_context_tokens: int = 24000):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.max_context_tokens = max_context_tokens  # ~75% of 32K limit
+        self.conversation_turns = []  # list of {"role": "user"|"assistant", "content": str}
+        self.compaction_count = 0
+        self.anchor_text = ""  # Original task description, always kept
+    
+    def set_anchor(self, task_description: str):
+        """Set the anchor text — always preserved across compactions."""
+        self.anchor_text = task_description
+    
+    def add_turn(self, role: str, content: str):
+        """Add a conversation turn."""
+        self.conversation_turns.append({"role": role, "content": content})
+    
+    def get_context_tokens(self) -> int:
+        """Count total tokens in current context."""
+        full_text = self._build_context()
+        return len(self.tokenizer.encode(full_text))
+    
+    def needs_compaction(self, chi_score: float = None) -> bool:
+        """Check if compaction is needed."""
+        token_count = self.get_context_tokens()
+        # Compact if context is too long OR CHI is critically low
+        if token_count > self.max_context_tokens:
+            return True
+        if chi_score is not None and chi_score < 0.5:
+            return True
+        return False
+    
+    def compact(self, strategy: str = "auto") -> str:
+        """
+        Compact the context. Returns the new context string.
+        
+        Strategies:
+        - "trim": Drop oldest turns, keep anchor + last N turns
+        - "summarize": Use the model to summarize older turns
+        - "anchor_reset": Nuclear option — keep only anchor + last 2 turns
+        """
+        # YOUR IMPLEMENTATION FOR EACH STRATEGY
+        pass
+    
+    def _build_context(self) -> str:
+        """Build the full context string from anchor + turns."""
+        parts = []
+        if self.anchor_text:
+            parts.append(f"[TASK]: {self.anchor_text}\n")
+        for turn in self.conversation_turns:
+            prefix = "User" if turn["role"] == "user" else "Assistant"
+            parts.append(f"{prefix}: {turn['content']}")
+        return "\n".join(parts)
+    
+    def _trim(self, keep_last: int = 5) -> str:
+        """Keep anchor + last N turns. Fast, no model call."""
+        # Keep the anchor text
+        # Keep the last `keep_last` turns
+        # Drop everything in between
+        # Return rebuilt context
+        pass
+    
+    def _summarize(self) -> str:
+        """
+        Summarize older turns into a brief recap, keep recent turns verbatim.
+        
+        Split conversation into:
+        - Old turns (to be summarized)
+        - Recent turns (keep as-is, last 5)
+        
+        Use the model itself to generate a summary of old turns.
+        Inject summary as a "[CONTEXT SUMMARY]" block at the start.
+        """
+        # Split turns: old (to summarize) and recent (to keep)
+        # Build a summarization prompt
+        # Generate summary using the model
+        # Rebuild context: anchor + summary + recent turns
+        pass
+    
+    def _anchor_reset(self) -> str:
+        """
+        Nuclear option: wipe everything except anchor + last 2 turns.
+        Used when CHI is critically low and summarization isn't enough.
+        """
+        pass
+```
+
+**Manual test:**
+```python
+# Simulate a conversation that fills up context
+compactor = ContextCompactor(model, tokenizer, max_context_tokens=2000)
+compactor.set_anchor("Build a TaskManager class in Python")
+
+# Add 20 turns of fake conversation
+for i in range(20):
+    compactor.add_turn("user", f"Step {i}: Add feature number {i} " * 20)
+    compactor.add_turn("assistant", f"Here is the implementation for step {i} " * 20)
+
+print(f"Before compaction: {compactor.get_context_tokens()} tokens")
+assert compactor.needs_compaction()
+
+# Test trim
+compactor.compact("trim")
+print(f"After trim: {compactor.get_context_tokens()} tokens")
+assert compactor.get_context_tokens() < 2000
+
+# Test that anchor is preserved
+context = compactor._build_context()
+assert "TaskManager" in context
+```
+
+**Time:** 3-4 hours
+**Git:** `git commit -m "TASK-021: context compaction engine (trim, summarize, anchor reset)"`
+
+---
+
+### TASK-022: SCAN-Style Anchor Tokens
+**Status:** ⬜ TODO
+**Do:** Create `cognition_engine/anchors.py`
+
+SCAN (System Compliance Awareness Notes) are periodic reminders
+injected into the context to keep the model focused. Three levels:
+
+```python
+"""
+SCAN Anchor Tokens — Periodic reminders to maintain focus.
+
+Injected at different frequencies based on CHI:
+- FULL (300 tokens): Complete task restatement + key decisions
+- MINI (120 tokens): Brief task reminder + current step
+- ANCHOR (20 tokens): One-line "Stay focused on: {task}"
+"""
+
+class AnchorManager:
+    """Generates and injects anchor tokens based on CHI level."""
+    
+    def __init__(self, task_description: str, key_decisions: list[str] = None):
+        self.task_description = task_description
+        self.key_decisions = key_decisions or []
+        self.files_modified = []  # Track what files the agent has touched
+    
+    def generate_anchor(self, level: str = "ANCHOR") -> str:
+        """
+        Generate an anchor token string.
+        
+        Levels:
+        - "FULL": ~300 tokens. Complete task context restoration.
+        - "MINI": ~120 tokens. Brief reminder.
+        - "ANCHOR": ~20 tokens. One-liner.
+        """
+        if level == "FULL":
+            return self._full_anchor()
+        elif level == "MINI":
+            return self._mini_anchor()
+        else:
+            return self._anchor()
+    
+    def _full_anchor(self) -> str:
+        parts = [
+            f"[SYSTEM REMINDER — FULL CONTEXT RESTORATION]",
+            f"Original task: {self.task_description}",
+        ]
+        if self.key_decisions:
+            parts.append("Key decisions so far:")
+            for d in self.key_decisions[-5:]:  # Last 5 decisions
+                parts.append(f"  - {d}")
+        if self.files_modified:
+            parts.append(f"Files modified: {', '.join(self.files_modified[-10:])}")
+        parts.append("[END REMINDER — Continue with the task above.]")
+        return "\n".join(parts)
+    
+    def _mini_anchor(self) -> str:
+        return (f"[REMINDER] Task: {self.task_description[:200]}. "
+                f"Decisions: {len(self.key_decisions)}. "
+                f"Files: {len(self.files_modified)}. Stay focused.")
+    
+    def _anchor(self) -> str:
+        return f"[FOCUS] {self.task_description[:100]}"
+    
+    def add_decision(self, decision: str):
+        """Track a key decision made during the session."""
+        self.key_decisions.append(decision)
+    
+    def add_file(self, filepath: str):
+        """Track a file the agent has modified."""
+        if filepath not in self.files_modified:
+            self.files_modified.append(filepath)
+    
+    def get_anchor_for_chi(self, chi_score: float) -> str | None:
+        """
+        Based on CHI score, return the appropriate anchor level.
+        Returns None if CHI is healthy (no anchor needed).
+        """
+        if chi_score > 0.8:
+            return None  # Healthy, no anchor needed
+        elif chi_score > 0.6:
+            return self.generate_anchor("ANCHOR")  # 20 tokens
+        elif chi_score > 0.4:
+            return self.generate_anchor("MINI")    # 120 tokens  
+        else:
+            return self.generate_anchor("FULL")    # 300 tokens
+```
+
+**Manual test:**
+```python
+anchor_mgr = AnchorManager("Build a REST API with Flask")
+anchor_mgr.add_decision("Use SQLite for database")
+anchor_mgr.add_decision("JWT for authentication")
+anchor_mgr.add_file("app.py")
+anchor_mgr.add_file("models.py")
+
+# Test each level
+print(anchor_mgr.generate_anchor("FULL"))   # Should include task + decisions + files
+print(anchor_mgr.generate_anchor("MINI"))   # Should be brief
+print(anchor_mgr.generate_anchor("ANCHOR")) # Should be one line
+
+# Test CHI-based selection
+assert anchor_mgr.get_anchor_for_chi(0.9) is None       # Healthy
+assert "FOCUS" in anchor_mgr.get_anchor_for_chi(0.7)     # Light anchor
+assert "REMINDER" in anchor_mgr.get_anchor_for_chi(0.5)  # Mini
+assert "FULL CONTEXT" in anchor_mgr.get_anchor_for_chi(0.3)  # Full
+```
+
+**Time:** 1-2 hours
+**Git:** `git commit -m "TASK-022: SCAN-style anchor tokens (FULL/MINI/ANCHOR)"`
+
+---
+
+### TASK-023: Tool-Calling Agent Loop
+**Status:** ⬜ TODO
+**Do:** Create `cognition_engine/agent.py`
+
+The agent needs to be able to: read files, write/edit files, 
+execute shell commands (with user confirmation), and think step-by-step.
+
+This is the core loop that turns the chat model into a coding agent.
+
+```python
+"""
+Agent Loop — The core execution engine.
+
+The agent receives a task, plans steps, executes them using tools,
+and monitors its own cognitive health throughout.
+"""
+import os
+import subprocess
+from cognition_engine.chi import CHIMonitor
+from cognition_engine.compaction import ContextCompactor
+from cognition_engine.anchors import AnchorManager
+from mlx_lm import load, generate
+
+class CognitionAgent:
+    """
+    A coding agent with cognitive health monitoring.
+    
+    Tools available:
+    - read_file(path) — read file contents
+    - write_file(path, content) — write/overwrite a file
+    - edit_file(path, old_text, new_text) — find and replace in a file
+    - execute(command) — run a shell command (requires user approval)
+    - think(thought) — record a reasoning step (no action)
+    """
+    
+    def __init__(self, model, tokenizer, task: str,
+                 working_dir: str = ".", auto_approve: bool = False):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.task = task
+        self.working_dir = working_dir
+        self.auto_approve = auto_approve
+        
+        # Core systems
+        self.chi_monitor = CHIMonitor(model, tokenizer, task)
+        self.compactor = ContextCompactor(model, tokenizer)
+        self.anchor_mgr = AnchorManager(task)
+        
+        self.compactor.set_anchor(task)
+        
+        # Tool call history
+        self.tool_history = []
+        self.turn_count = 0
+    
+    def run(self, max_turns: int = 50):
+        """
+        Main agent loop.
+        
+        Each turn:
+        1. Build context (with anchors if CHI is low)
+        2. Generate model response
+        3. Parse tool calls from response
+        4. Execute tool calls
+        5. Update CHI
+        6. Check if compaction needed
+        7. Repeat until task done or max_turns
+        """
+        print(f"Starting agent on task: {self.task}")
+        print(f"Working directory: {os.path.abspath(self.working_dir)}\n")
+        
+        while self.turn_count < max_turns:
+            # 1. Check if anchor needed
+            if self.chi_monitor.chi_history:
+                chi = self.chi_monitor.chi_history[-1]
+                anchor = self.anchor_mgr.get_anchor_for_chi(chi)
+                if anchor:
+                    self.compactor.add_turn("system", anchor)
+            
+            # 2. Build context and generate
+            context = self.compactor._build_context()
+            
+            # Add generation prompt
+            context += "\nAssistant: "
+            response = generate(self.model, self.tokenizer,
+                              prompt=context, max_tokens=800)
+            
+            # 3. Parse and execute tool calls
+            tool_calls = self._parse_tool_calls(response)
+            tool_results = []
+            
+            for tool_call in tool_calls:
+                result = self._execute_tool(tool_call)
+                tool_results.append(result)
+            
+            # 4. Add to conversation
+            self.compactor.add_turn("assistant", response)
+            if tool_results:
+                results_text = "\n".join(tool_results)
+                self.compactor.add_turn("system", f"[Tool Results]\n{results_text}")
+            
+            # 5. Update CHI
+            chi_result = self.chi_monitor.update(response)
+            level = self.chi_monitor.get_intervention_level()
+            
+            # 6. Display status
+            chi = chi_result['chi_score']
+            self._print_status(chi, level, tool_calls)
+            
+            # 7. Check compaction
+            if self.compactor.needs_compaction(chi):
+                if chi < 0.3:
+                    self.compactor.compact("anchor_reset")
+                    print("  [COMPACTION: anchor reset]")
+                elif chi < 0.5:
+                    self.compactor.compact("summarize")
+                    print("  [COMPACTION: summarize]")
+                else:
+                    self.compactor.compact("trim")
+                    print("  [COMPACTION: trim]")
+            
+            # 8. Check if model says it's done
+            if self._is_task_complete(response):
+                print("\n Agent reports task complete.")
+                break
+            
+            self.turn_count += 1
+        
+        self._print_summary()
+    
+    def _parse_tool_calls(self, response: str) -> list[dict]:
+        """
+        Parse tool calls from the model's response.
+        
+        Expected format (you decide the exact format):
+        <tool>read_file</tool>
+        <path>src/main.py</path>
+        
+        OR simpler:
+        [READ] src/main.py
+        [WRITE] src/main.py
+        ```content here```
+        [EXEC] python -m pytest tests/
+        [THINK] I need to check the database schema first.
+        
+        Start with a simple format. You can make it more sophisticated later.
+        """
+        # YOUR IMPLEMENTATION
+        # Parse the response text for tool call patterns
+        # Return list of {"tool": "read"|"write"|"edit"|"execute"|"think", ...}
+        pass
+    
+    def _execute_tool(self, tool_call: dict) -> str:
+        """Execute a single tool call and return the result."""
+        tool = tool_call.get("tool")
+        
+        if tool == "read":
+            return self._tool_read(tool_call["path"])
+        elif tool == "write":
+            return self._tool_write(tool_call["path"], tool_call["content"])
+        elif tool == "edit":
+            return self._tool_edit(tool_call["path"], 
+                                   tool_call["old"], tool_call["new"])
+        elif tool == "execute":
+            return self._tool_execute(tool_call["command"])
+        elif tool == "think":
+            return f"[Thought recorded: {tool_call['thought'][:100]}]"
+        else:
+            return f"[Unknown tool: {tool}]"
+    
+    def _tool_read(self, path: str) -> str:
+        """Read a file and return its contents."""
+        full_path = os.path.join(self.working_dir, path)
+        try:
+            with open(full_path) as f:
+                content = f.read()
+            self.anchor_mgr.add_file(path)
+            return f"[READ {path}]\n{content[:2000]}"  # Truncate large files
+        except Exception as e:
+            return f"[ERROR reading {path}: {e}]"
+    
+    def _tool_write(self, path: str, content: str) -> str:
+        """Write content to a file."""
+        full_path = os.path.join(self.working_dir, path)
+        try:
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, 'w') as f:
+                f.write(content)
+            self.anchor_mgr.add_file(path)
+            return f"[WROTE {path} ({len(content)} chars)]"
+        except Exception as e:
+            return f"[ERROR writing {path}: {e}]"
+    
+    def _tool_edit(self, path: str, old_text: str, new_text: str) -> str:
+        """Find and replace in a file."""
+        full_path = os.path.join(self.working_dir, path)
+        try:
+            with open(full_path) as f:
+                content = f.read()
+            if old_text not in content:
+                return f"[ERROR: '{old_text[:50]}...' not found in {path}]"
+            content = content.replace(old_text, new_text, 1)
+            with open(full_path, 'w') as f:
+                f.write(content)
+            self.anchor_mgr.add_file(path)
+            return f"[EDITED {path}]"
+        except Exception as e:
+            return f"[ERROR editing {path}: {e}]"
+    
+    def _tool_execute(self, command: str) -> str:
+        """Execute a shell command with user approval."""
+        if not self.auto_approve:
+            approval = input(f"  Execute: `{command}`? [y/N] ")
+            if approval.lower() != 'y':
+                return "[EXEC cancelled by user]"
+        try:
+            result = subprocess.run(
+                command, shell=True, capture_output=True, text=True,
+                cwd=self.working_dir, timeout=30
+            )
+            output = result.stdout[:1000]
+            if result.returncode != 0:
+                output += f"\n[STDERR: {result.stderr[:500]}]"
+            return f"[EXEC `{command}` → exit {result.returncode}]\n{output}"
+        except subprocess.TimeoutExpired:
+            return f"[EXEC `{command}` → TIMEOUT (30s)]"
+        except Exception as e:
+            return f"[EXEC ERROR: {e}]"
+    
+    def _is_task_complete(self, response: str) -> bool:
+        """Check if the model indicates the task is done."""
+        markers = ["[DONE]", "[TASK COMPLETE]", "task is complete",
+                   "all requirements have been met"]
+        return any(m.lower() in response.lower() for m in markers)
+    
+    def _print_status(self, chi: float, level: int, tool_calls: list):
+        """Print turn status."""
+        color = "\033[92m" if chi > 0.8 else "\033[93m" if chi > 0.5 else "\033[91m"
+        tools_str = ", ".join(tc.get("tool", "?") for tc in tool_calls) if tool_calls else "none"
+        print(f"  Turn {self.turn_count:3d} | {color}CHI {chi:.3f} L{level}\033[0m | "
+              f"Tools: {tools_str}")
+    
+    def _print_summary(self):
+        """Print session summary."""
+        print(f"\n--- Session Summary ---")
+        print(f"Turns: {self.turn_count}")
+        print(f"Compactions: {self.compactor.compaction_count}")
+        print(f"Files modified: {self.anchor_mgr.files_modified}")
+        if self.chi_monitor.chi_history:
+            print(f"CHI: min={min(self.chi_monitor.chi_history):.3f} "
+                  f"final={self.chi_monitor.chi_history[-1]:.3f}")
+```
+
+**Manual test:**
+You won't test the full agent loop end-to-end yet (model output format
+needs tuning). Instead, test each tool individually:
+
+```python
+agent = CognitionAgent(model, tokenizer, "test task", working_dir="/tmp/test_agent")
+os.makedirs("/tmp/test_agent", exist_ok=True)
+
+# Test write
+print(agent._tool_write("test.py", "print('hello')"))
+
+# Test read
+print(agent._tool_read("test.py"))
+
+# Test edit
+print(agent._tool_edit("test.py", "hello", "world"))
+
+# Test read again to verify edit
+print(agent._tool_read("test.py"))
+
+# Test execute
+print(agent._tool_execute("python /tmp/test_agent/test.py"))
+```
+
+**Time:** 4-5 hours
+**Git:** `git commit -m "TASK-023: tool-calling agent loop with CHI integration"`
+
+---
+
+### TASK-024: Tool-Call Prompt Format
+**Status:** ⬜ TODO
+**Do:** Create `cognition_engine/prompts.py`
+
+The model needs to know HOW to format tool calls. This is the system
+prompt that teaches it the tool-calling protocol.
+
+```python
+"""
+Prompt templates for the Cognition Engine agent.
+"""
+
+SYSTEM_PROMPT = """You are Cognition Engine, an AI coding assistant running locally.
+You have access to these tools:
+
+[READ] path — Read a file
+[WRITE] path
+```
+file content here
+```
+[EDIT] path
+```old
+text to find
+```new
+replacement text
+```
+[EXEC] command — Run a shell command
+[THINK] your reasoning — Record a thought (no action taken)
+[DONE] — Signal that the task is complete
+
+Rules:
+- Use [THINK] before complex decisions
+- Use [READ] before editing a file you haven't seen
+- One tool call per response. Wait for the result before the next action.
+- When the task is fully complete and tested, say [DONE]
+- Be precise with file paths. Use relative paths from the project root.
+"""
+
+def build_system_prompt(task: str, project_context: str = None) -> str:
+    """Build the full system prompt for a task."""
+    prompt = SYSTEM_PROMPT + f"\n\nYour current task: {task}\n"
+    if project_context:
+        prompt += f"\nProject context:\n{project_context}\n"
+    return prompt
+
+def parse_tool_call(response: str) -> dict | None:
+    """
+    Parse a single tool call from model response.
+    Returns dict with tool type and parameters, or None if no tool call found.
+    """
+    response = response.strip()
+    
+    # [READ] path
+    if response.startswith("[READ]"):
+        path = response[6:].strip().split("\n")[0].strip()
+        return {"tool": "read", "path": path}
+    
+    # [WRITE] path\n```\ncontent\n```
+    if response.startswith("[WRITE]"):
+        lines = response.split("\n")
+        path = lines[0][7:].strip()
+        # Extract content between ``` markers
+        content = _extract_code_block(response)
+        if content is not None:
+            return {"tool": "write", "path": path, "content": content}
+    
+    # [EDIT] path\n```old\n...\n```new\n...\n```
+    if response.startswith("[EDIT]"):
+        lines = response.split("\n")
+        path = lines[0][6:].strip()
+        old_text, new_text = _extract_edit_blocks(response)
+        if old_text is not None:
+            return {"tool": "edit", "path": path, "old": old_text, "new": new_text}
+    
+    # [EXEC] command
+    if response.startswith("[EXEC]"):
+        command = response[6:].strip().split("\n")[0].strip()
+        return {"tool": "execute", "command": command}
+    
+    # [THINK] thought
+    if response.startswith("[THINK]"):
+        thought = response[7:].strip()
+        return {"tool": "think", "thought": thought}
+    
+    # [DONE]
+    if "[DONE]" in response:
+        return {"tool": "done"}
+    
+    return None
+
+def _extract_code_block(text: str) -> str | None:
+    """Extract content from first ``` code block."""
+    # YOUR IMPLEMENTATION
+    pass
+
+def _extract_edit_blocks(text: str) -> tuple[str | None, str | None]:
+    """Extract old and new text from ```old and ```new blocks."""
+    # YOUR IMPLEMENTATION
+    pass
+```
+
+**Manual test:**
+```python
+from cognition_engine.prompts import parse_tool_call
+
+assert parse_tool_call("[READ] src/main.py")["path"] == "src/main.py"
+assert parse_tool_call("[EXEC] python -m pytest")["command"] == "python -m pytest"
+assert parse_tool_call("[THINK] I need to check the schema")["thought"].startswith("I need")
+assert parse_tool_call("[DONE]")["tool"] == "done"
+
+# Test WRITE parsing
+write_resp = '[WRITE] test.py\n```\nprint("hello")\n```'
+parsed = parse_tool_call(write_resp)
+assert parsed["tool"] == "write"
+assert parsed["path"] == "test.py"
+assert "hello" in parsed["content"]
+```
+
+**Time:** 2-3 hours
+**Git:** `git commit -m "TASK-024: tool-call prompt format and parser"`
+
+---
+
+### TASK-025: Integration — Agent + CHI + Compaction Working Together
+**Status:** ⬜ TODO
+**Do:** Create `scripts/test_agent.py`
+
+Wire everything together and test the agent on a real (small) coding task.
+This is an integration test — does the full system work end-to-end?
+
+```python
+"""
+Integration test: Run the agent on a real coding task.
+Verify CHI monitors, anchors inject, and compaction triggers.
+"""
+from mlx_lm import load
+from cognition_engine.agent import CognitionAgent
+import os
+import shutil
+
+# Set up a clean test directory
+TEST_DIR = "/tmp/cognition_test"
+if os.path.exists(TEST_DIR):
+    shutil.rmtree(TEST_DIR)
+os.makedirs(TEST_DIR)
+
+# Load model
+model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+
+# Create agent with a simple task
+agent = CognitionAgent(
+    model, tokenizer,
+    task="Create a Python file called calculator.py with a Calculator class "
+         "that has add, subtract, multiply, and divide methods. "
+         "Then create test_calculator.py with tests for each method. "
+         "Run the tests to verify they pass.",
+    working_dir=TEST_DIR,
+    auto_approve=False  # You'll manually approve shell commands
+)
+
+# Run the agent (limit to 15 turns for testing)
+agent.run(max_turns=15)
+
+# Verify the agent created files
+assert os.path.exists(os.path.join(TEST_DIR, "calculator.py")), "calculator.py not created"
+print("\nFiles in test directory:")
+for f in os.listdir(TEST_DIR):
+    print(f"  {f}")
+```
+
+**Expected behavior:**
+- Agent uses [THINK] to plan
+- Agent uses [WRITE] to create calculator.py
+- Agent uses [WRITE] to create test_calculator.py
+- Agent uses [EXEC] to run pytest (you approve)
+- CHI is displayed each turn
+- If CHI drops, anchors are injected
+- Agent says [DONE] when tests pass
+
+**Reality check:** The 7B model may not follow the tool format perfectly.
+That's fine — you'll see what works and what doesn't. Log the issues
+in your SESSION_LOG so we can fix the prompt format in TASK-024.
+
+**Time:** 3-4 hours (includes debugging model output parsing)
+**Git:** `git commit -m "TASK-025: integration test — agent + CHI + compaction"`
+
+---
+
+### TASK-026: Working Memory (.cognition/ directory)
+**Status:** ⬜ TODO
+**Do:** Create `cognition_engine/memory.py`
+
+The agent should automatically save notes about the project it's
+working on. These notes persist between sessions and get loaded
+at the start of the next session.
+
+```python
+"""
+Working Memory — Zettelkasten-style project notes.
+
+The agent automatically writes notes as it works:
+- Architectural decisions
+- File purposes
+- Key patterns used
+- Bugs encountered and fixed
+
+Notes are stored in .cognition/ in the project directory.
+"""
+import os
+import json
+from datetime import datetime
+
+class WorkingMemory:
+    """Manages persistent project memory in .cognition/ directory."""
+    
+    def __init__(self, project_dir: str):
+        self.memory_dir = os.path.join(project_dir, ".cognition")
+        os.makedirs(self.memory_dir, exist_ok=True)
+        self.notes_file = os.path.join(self.memory_dir, "notes.json")
+        self.notes = self._load_notes()
+    
+    def _load_notes(self) -> list[dict]:
+        """Load existing notes from disk."""
+        if os.path.exists(self.notes_file):
+            with open(self.notes_file) as f:
+                return json.load(f)
+        return []
+    
+    def add_note(self, category: str, content: str, related_files: list[str] = None):
+        """
+        Add a note to working memory.
+        
+        Categories: "decision", "pattern", "bug", "file_purpose", "context"
+        """
+        note = {
+            "id": len(self.notes),
+            "timestamp": datetime.now().isoformat(),
+            "category": category,
+            "content": content,
+            "related_files": related_files or [],
+        }
+        self.notes.append(note)
+        self._save()
+        return note
+    
+    def get_context_for_task(self, task_description: str, max_notes: int = 10) -> str:
+        """
+        Get relevant notes for a task. Returns formatted string
+        that can be injected into the agent's context.
+        
+        For v1: just return the last N notes.
+        For v2 (later): use embeddings to find relevant notes.
+        """
+        recent = self.notes[-max_notes:]
+        if not recent:
+            return "[No previous notes for this project]"
+        
+        lines = ["[PROJECT MEMORY — Previous session notes]"]
+        for note in recent:
+            lines.append(f"  [{note['category']}] {note['content'][:200]}")
+        lines.append("[END PROJECT MEMORY]\n")
+        return "\n".join(lines)
+    
+    def get_session_summary(self) -> dict:
+        """Get a summary of the current memory state."""
+        categories = {}
+        for note in self.notes:
+            cat = note["category"]
+            categories[cat] = categories.get(cat, 0) + 1
+        return {
+            "total_notes": len(self.notes),
+            "categories": categories,
+            "files_referenced": list(set(
+                f for n in self.notes for f in n.get("related_files", [])
+            )),
+        }
+    
+    def _save(self):
+        """Save notes to disk."""
+        with open(self.notes_file, 'w') as f:
+            json.dump(self.notes, f, indent=2)
+```
+
+**Manual test:**
+```python
+memory = WorkingMemory("/tmp/test_project")
+
+memory.add_note("decision", "Using SQLite instead of PostgreSQL for simplicity",
+                related_files=["db.py"])
+memory.add_note("pattern", "All API routes follow /api/v1/{resource} convention",
+                related_files=["routes.py", "app.py"])
+memory.add_note("bug", "Fixed: forgot to close DB connection in get_users()",
+                related_files=["db.py"])
+
+context = memory.get_context_for_task("Add a new API endpoint")
+print(context)
+assert "SQLite" in context
+assert "API routes" in context
+
+summary = memory.get_session_summary()
+print(summary)
+assert summary["total_notes"] == 3
+
+# Verify persistence — create new instance, should load existing notes
+memory2 = WorkingMemory("/tmp/test_project")
+assert len(memory2.notes) == 3
+```
+
+**Time:** 1-2 hours
+**Git:** `git commit -m "TASK-026: working memory (.cognition/ directory)"`
+
+---
+
+## WEEK 4 CHECKLIST
+- [ ] TASK-021: Context compaction engine (3-4 hrs)
+- [ ] TASK-022: SCAN-style anchor tokens (1-2 hrs)
+- [ ] TASK-023: Tool-calling agent loop (4-5 hrs)
+- [ ] TASK-024: Tool-call prompt format + parser (2-3 hrs)
+- [ ] TASK-025: Integration test (3-4 hrs)
+- [ ] TASK-026: Working memory (1-2 hrs)
+
+**Total: ~15-20 hours across 4-5 days**
+
+**Week 4 milestone:** You have a working coding agent that:
+1. Takes a task and executes it using tools (read/write/exec)
+2. Monitors CHI in real-time
+3. Injects anchor tokens when CHI drops
+4. Compacts context when it gets too long
+5. Saves notes to .cognition/ for session persistence
+
+This is the foundation that activation steering (Phase 2) plugs into.
+
+---
+
+## NOTES
+
+### Don't over-polish the agent loop yet.
+The 7B model WILL produce messy tool calls. It will sometimes
+forget the format, mix plain text with tool calls, or hallucinate
+file paths. That's expected. Log the issues, move on. The agent
+loop will get much better when we:
+1. Switch to Qwen3.5-9B (better instruction following)
+2. Add activation steering to keep it focused
+
+### The tool format is intentionally simple.
+XML-style (<tool>) or JSON tool calls would be cleaner but
+local 7B models struggle with structured output. The bracket
+format [READ] [WRITE] [EXEC] is easier for small models to learn.
+You can upgrade to structured output when model quality improves.
+
+### Context compaction is Level 3. We're building it now because
+the agent needs it to function, but the real magic (Level 2:
+activation steering) comes in Phase 2. Think of compaction as
+the safety net that catches what steering doesn't fix.
