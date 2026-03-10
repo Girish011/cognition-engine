@@ -16,6 +16,7 @@ from mlx_lm import generate
 from cognition_engine.chi import CHIMonitor
 from cognition_engine.compaction import ContextCompactor
 from cognition_engine.anchors import AnchorManager
+from cognition_engine.prompts import parse_tool_call
 
 
 class CognitionAgent:
@@ -156,58 +157,12 @@ class CognitionAgent:
 
         Returns a list with 0 or 1 tool call dicts.
         """
-        text = response.strip()
-        if not text.startswith("["):
+        parsed = parse_tool_call(response)
+        if not parsed:
             return []
-
-        # Only parse the first bracketed directive; ignore trailing prose.
-        first_line = text.splitlines()[0].strip()
-
-        if first_line.startswith("[READ]"):
-            path = first_line[len("[READ]") :].strip()
-            if not path:
-                return []
-            return [{"tool": "read", "path": path}]
-
-        if first_line.startswith("[EXEC]"):
-            command = first_line[len("[EXEC]") :].strip()
-            if not command:
-                return []
-            return [{"tool": "execute", "command": command}]
-
-        if first_line.startswith("[THINK]"):
-            thought = first_line[len("[THINK]") :].strip()
-            return [{"tool": "think", "thought": thought}]
-
-        if first_line.startswith("[WRITE]"):
-            # [WRITE] path on first line; content between first pair of ``` fences
-            lines = text.splitlines()
-            path = lines[0][len("[WRITE]") :].strip()
-            if not path:
-                return []
-            content = self._extract_code_block(text)
-            if content is None:
-                return []
-            return [{"tool": "write", "path": path, "content": content}]
-
-        if first_line.startswith("[EDIT]"):
-            lines = text.splitlines()
-            path = lines[0][len("[EDIT]") :].strip()
-            if not path:
-                return []
-            old_text, new_text = self._extract_edit_blocks(text)
-            if old_text is None:
-                return []
-            return [
-                {
-                    "tool": "edit",
-                    "path": path,
-                    "old": old_text,
-                    "new": new_text,
-                }
-            ]
-
-        return []
+        # The agent loop treats [DONE] specially at a higher level; for now we
+        # surface it as a tool so the caller can decide how to stop.
+        return [parsed]
 
     def _execute_tool(self, tool_call: Dict) -> str:
         """Execute a single tool call and return the result."""
@@ -335,50 +290,6 @@ class CognitionAgent:
                 f"CHI: min={min(self.chi_monitor.chi_history):.3f} "
                 f"final={self.chi_monitor.chi_history[-1]:.3f}"
             )
-
-    @staticmethod
-    def _extract_code_block(text: str) -> str | None:
-        """Extract content from the first ``` code block."""
-        start = text.find("```")
-        if start == -1:
-            return None
-        end = text.find("```", start + 3)
-        if end == -1:
-            return None
-        return text[start + 3 : end].strip()
-
-    @staticmethod
-    def _extract_edit_blocks(text: str) -> tuple[str | None, str | None]:
-        """Extract old and new text from ```old and ```new blocks."""
-        # Expect pattern: ```old ... ```new ... ```
-        marker_old = "```old"
-        marker_new = "```new"
-
-        start_old = text.find(marker_old)
-        if start_old == -1:
-            return None, None
-        start_old_content = text.find("\n", start_old)
-        if start_old_content == -1:
-            return None, None
-
-        start_new = text.find(marker_new, start_old_content)
-        if start_new == -1:
-            return None, None
-
-        old_block = text[start_old_content:start_new]
-
-        start_new_content = text.find("\n", start_new)
-        if start_new_content == -1:
-            return None, None
-
-        # The final ``` after new block
-        end_new = text.find("```", start_new_content)
-        if end_new == -1:
-            return None, None
-
-        new_block = text[start_new_content:end_new]
-
-        return old_block.strip(), new_block.strip()
 
 
 if __name__ == "__main__":

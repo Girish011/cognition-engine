@@ -1713,7 +1713,7 @@ print(agent._tool_execute("python /tmp/test_agent/test.py"))
 ---
 
 ### TASK-024: Tool-Call Prompt Format
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/prompts.py`
 
 The model needs to know HOW to format tool calls. This is the system
@@ -2029,7 +2029,7 @@ assert len(memory2.notes) == 3
 - [x] TASK-021: Context compaction engine (3-4 hrs)
 - [x] TASK-022: SCAN-style anchor tokens (1-2 hrs)
 - [x] TASK-023: Tool-calling agent loop (4-5 hrs)
-- [ ] TASK-024: Tool-call prompt format + parser (2-3 hrs)
+- [x] TASK-024: Tool-call prompt format + parser (2-3 hrs)
 - [ ] TASK-025: Integration test (3-4 hrs)
 - [ ] TASK-026: Working memory (1-2 hrs)
 

@@ -271,3 +271,10 @@
 - `_tool_read`, `_tool_write`, `_tool_edit`, and `_tool_execute` use `working_dir`-relative paths and update `AnchorManager.files_modified` so anchors reflect touched files. Execute prompts for approval unless `auto_approve=True`, runs with 30s timeout, and returns exit code + truncated stdout/stderr.
 - `_parse_tool_calls()` implements the simple bracket protocol for v1 (no dependency on `prompts.py` yet): first line determines the tool; `[WRITE]` and `[EDIT]` use `_extract_code_block()` and `_extract_edit_blocks()` to pull fenced content. Returns 0 or 1 tool-call dict; `_execute_tool()` dispatches and records each call in `tool_history`.
 - Manual scaffold in `__main__`: loads Qwen2.5-Coder-7B via `cognition_engine.inference.load`, creates an agent pointing at `/tmp/test_agent` with `auto_approve=True`, then runs the per-task manual tests: write `test.py`, read it, edit "hello"→"world", read again, and `EXEC "python test.py"` to print `world`. This exercises the file and exec tools without relying on full agent loop behavior.
+
+## 2026-03-09 (Week 4 — TASK-024: Tool-call prompt format + parser)
+
+- TASK-024 — Tool-Call Prompt Format — Completed
+- Created `cognition_engine/prompts.py` with `SYSTEM_PROMPT` describing the bracketed tool protocol, `build_system_prompt(task, project_context=None)` to inject the current task and optional project context, and `parse_tool_call(response)` that turns model outputs into structured tool dicts (`read`, `write`, `edit`, `execute`, `think`, `done`).
+- Parser helpers `_extract_code_block()` and `_extract_edit_blocks()` implement the exact `WRITE`/`EDIT` fencing contract (```…``` and ```old / ```new blocks). `CognitionAgent._parse_tool_calls()` now delegates to `parse_tool_call()` so the loop and prompt share a single source of truth for tool syntax.
+- Manual scaffold in `__main__`: runs in-process assertions that `[READ]`, `[EXEC]`, `[THINK]`, `[DONE]`, a `[WRITE]` with fenced code, and an `[EDIT]` with ```old/```new blocks all parse into the expected dicts. On success it prints "prompts.py manual parser tests passed."
