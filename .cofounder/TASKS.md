@@ -1432,7 +1432,7 @@ assert "FULL CONTEXT" in anchor_mgr.get_anchor_for_chi(0.3)  # Full
 ---
 
 ### TASK-023: Tool-Calling Agent Loop
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/agent.py`
 
 The agent needs to be able to: read files, write/edit files, 
@@ -2028,7 +2028,7 @@ assert len(memory2.notes) == 3
 ## WEEK 4 CHECKLIST
 - [x] TASK-021: Context compaction engine (3-4 hrs)
 - [x] TASK-022: SCAN-style anchor tokens (1-2 hrs)
-- [ ] TASK-023: Tool-calling agent loop (4-5 hrs)
+- [x] TASK-023: Tool-calling agent loop (4-5 hrs)
 - [ ] TASK-024: Tool-call prompt format + parser (2-3 hrs)
 - [ ] TASK-025: Integration test (3-4 hrs)
 - [ ] TASK-026: Working memory (1-2 hrs)
