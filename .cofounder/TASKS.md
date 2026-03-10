@@ -1836,7 +1836,7 @@ assert "hello" in parsed["content"]
 ---
 
 ### TASK-025: Integration — Agent + CHI + Compaction Working Together
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `scripts/test_agent.py`
 
 Wire everything together and test the agent on a real (small) coding task.
@@ -2030,7 +2030,7 @@ assert len(memory2.notes) == 3
 - [x] TASK-022: SCAN-style anchor tokens (1-2 hrs)
 - [x] TASK-023: Tool-calling agent loop (4-5 hrs)
 - [x] TASK-024: Tool-call prompt format + parser (2-3 hrs)
-- [ ] TASK-025: Integration test (3-4 hrs)
+- [x] TASK-025: Integration test (3-4 hrs)
 - [ ] TASK-026: Working memory (1-2 hrs)
 
 **Total: ~15-20 hours across 4-5 days**
