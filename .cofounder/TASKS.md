@@ -1901,7 +1901,7 @@ in your SESSION_LOG so we can fix the prompt format in TASK-024.
 ---
 
 ### TASK-026: Working Memory (.cognition/ directory)
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/memory.py`
 
 The agent should automatically save notes about the project it's
@@ -2031,7 +2031,7 @@ assert len(memory2.notes) == 3
 - [x] TASK-023: Tool-calling agent loop (4-5 hrs)
 - [x] TASK-024: Tool-call prompt format + parser (2-3 hrs)
 - [x] TASK-025: Integration test (3-4 hrs)
-- [ ] TASK-026: Working memory (1-2 hrs)
+- [x] TASK-026: Working memory (1-2 hrs)
 
 **Total: ~15-20 hours across 4-5 days**
 

@@ -262,22 +262,27 @@
 - TASK-022 — SCAN-Style Anchor Tokens — Completed
 - Created `cognition_engine/anchors.py` with `AnchorManager` generating three reminder levels: `FULL` (full-context restoration block with original task, last 5 key decisions, and last 10 modified files), `MINI` (short `[REMINDER]` line with task snippet, counts of decisions/files), and `ANCHOR` (one-line `[FOCUS]` reminder).
 - `add_decision()` and `add_file()` track evolving context so anchors stay grounded in actual work; `get_anchor_for_chi(chi_score)` maps CHI ranges to levels: `None` (>0.8), `ANCHOR` (0.6–0.8), `MINI` (0.4–0.6), `FULL` (≤0.4).
-- Manual scaffold in `__main__`: constructs an `AnchorManager` for "Build a REST API with Flask", adds two decisions and two files, prints each anchor level, and asserts CHI-based selection returns `None`, a `[FOCUS]` line, a `[REMINDER]` line, and a `FULL CONTEXT` block respectively before printing "AnchorManager manual scaffold passed."
+- Manual scaffold in `__main__`: constructs an `AnchorManager` for "Build a REST API with Flask", adds two decisions and two files, prints each anchor level, and asserts CHI-based selection returns `None`, a `[FOCUS]` line, a `[REMINDER]` line, and a `FULL CONTEXT` block respectively. From venv, `python -m cognition_engine.anchors` printed the FULL/MINI/ANCHOR blocks as expected and ended with "AnchorManager manual scaffold passed."
 
 ## 2026-03-09 (Week 4 — TASK-023: Tool-calling agent loop)
 
 - TASK-023 — Tool-Calling Agent Loop — Completed
 - Created `cognition_engine/agent.py` with `CognitionAgent` wiring together `CHIMonitor`, `ContextCompactor`, and `AnchorManager` plus file and shell tools. `run(max_turns)` builds context (injecting anchors when CHI < 0.8), calls `mlx_lm.generate`, parses a single bracketed tool call per response (`[READ]`, `[WRITE]`, `[EDIT]`, `[EXEC]`, `[THINK]`), executes it, appends tool results to context, updates CHI, triggers compaction (trim/summarize/anchor_reset) as needed, and stops when the model signals completion (`[DONE]`/“task is complete” markers) or hits `max_turns`.
 - `_tool_read`, `_tool_write`, `_tool_edit`, and `_tool_execute` use `working_dir`-relative paths and update `AnchorManager.files_modified` so anchors reflect touched files. Execute prompts for approval unless `auto_approve=True`, runs with 30s timeout, and returns exit code + truncated stdout/stderr.
-- `_parse_tool_calls()` implements the simple bracket protocol for v1 (no dependency on `prompts.py` yet): first line determines the tool; `[WRITE]` and `[EDIT]` use `_extract_code_block()` and `_extract_edit_blocks()` to pull fenced content. Returns 0 or 1 tool-call dict; `_execute_tool()` dispatches and records each call in `tool_history`.
-- Manual scaffold in `__main__`: loads Qwen2.5-Coder-7B via `cognition_engine.inference.load`, creates an agent pointing at `/tmp/test_agent` with `auto_approve=True`, then runs the per-task manual tests: write `test.py`, read it, edit "hello"→"world", read again, and `EXEC "python test.py"` to print `world`. This exercises the file and exec tools without relying on full agent loop behavior.
+- `_parse_tool_calls()` now delegates to the shared `parse_tool_call()` helper (see TASK-024) so the bracket protocol is defined in one place. Returns 0 or 1 tool-call dict; `_execute_tool()` dispatches and records each call in `tool_history`.
+- Manual scaffold in `__main__`: loads Qwen2.5-Coder-7B via `cognition_engine.inference.load`, creates an agent pointing at `/tmp/test_agent` with `auto_approve=True`, then runs the per-task manual tests: `[WRITE]`-equivalent `_tool_write("test.py", "print('hello')")`, `_tool_read("test.py")`, `_tool_edit("test.py", "hello", "world")`, `_tool_read("test.py")` again, and `_tool_execute("python test.py")` to print `world`. From venv, `python -m cognition_engine.agent` printed:
+  - `[WROTE test.py (14 chars)]`
+  - `[READ test.py]` followed by `print('hello')`
+  - `[EDITED test.py]`
+  - `[READ test.py]` followed by `print('world')`
+  - `[EXEC \`python test.py\` → exit 0]` with `world` on stdout, confirming the tools work end-to-end in the test directory.
 
 ## 2026-03-09 (Week 4 — TASK-024: Tool-call prompt format + parser)
 
 - TASK-024 — Tool-Call Prompt Format — Completed
 - Created `cognition_engine/prompts.py` with `SYSTEM_PROMPT` describing the bracketed tool protocol, `build_system_prompt(task, project_context=None)` to inject the current task and optional project context, and `parse_tool_call(response)` that turns model outputs into structured tool dicts (`read`, `write`, `edit`, `execute`, `think`, `done`).
 - Parser helpers `_extract_code_block()` and `_extract_edit_blocks()` implement the exact `WRITE`/`EDIT` fencing contract (```…``` and ```old / ```new blocks). `CognitionAgent._parse_tool_calls()` now delegates to `parse_tool_call()` so the loop and prompt share a single source of truth for tool syntax.
-- Manual scaffold in `__main__`: runs in-process assertions that `[READ]`, `[EXEC]`, `[THINK]`, `[DONE]`, a `[WRITE]` with fenced code, and an `[EDIT]` with ```old/```new blocks all parse into the expected dicts. On success it prints "prompts.py manual parser tests passed."
+- Manual scaffold in `__main__`: runs in-process assertions that `[READ]`, `[EXEC]`, `[THINK]`, `[DONE]`, a `[WRITE]` with fenced code, and an `[EDIT]` with ```old/```new blocks all parse into the expected dicts. From venv, `python -m cognition_engine.prompts` printed "prompts.py manual parser tests passed.", confirming the parser behaves as expected for the sample formats.
 
 ## 2026-03-09 (Week 4 — TASK-025: Integration test — agent + CHI + compaction)
 
@@ -286,3 +291,9 @@
 - After the run, the script asserts that `calculator.py` exists and prints the files in the test directory. This is the end-to-end harness to observe CHI lines per turn, anchor injections, and context compaction decisions while the agent tries to complete a real coding task.
 - Note: Success of the *behavior* (tool format adherence, tests actually passing, [DONE] usage) depends on the local 7B model's instruction following; script is designed so that any issues can be inspected and then logged here for future prompt/agent tuning.
 - First real run (`python -m scripts.test_agent` from venv): agent completed 15 turns with **CHI staying in Level 1–2 range (min 0.683, final 0.693)** but **never emitted any tool calls** (`Tools: none` each turn), `Compactions: 0`, `Files modified: []`. Final assertion `calculator.py not created` failed, confirming that with the current SYSTEM_PROMPT + small model, the agent loop runs and reports CHI but the model does not yet follow the `[READ]/[WRITE]/[EDIT]/[EXEC]/[DONE]` protocol in practice.
+
+## 2026-03-09 (Week 4 — TASK-026: Working memory (.cognition/ directory))
+
+- TASK-026 — Working Memory — Completed
+- Created `cognition_engine/memory.py` with `WorkingMemory` managing a persistent `.cognition/notes.json` per project directory. `add_note(category, content, related_files)` appends a timestamped note with an incremental `id` and saves immediately; `get_context_for_task(task_description, max_notes=10)` returns a `[PROJECT MEMORY — Previous session notes]` block with the last N notes’ categories and first 200 chars of content; `get_session_summary()` aggregates counts per category and unique `files_referenced`.
+- Manual scaffold in `__main__`: writes three sample notes (decision, pattern, bug) against `/tmp/test_project`, verifies `get_context_for_task` includes “SQLite” and “API routes”, checks that `get_session_summary()["total_notes"] == 3`, and confirms persistence by instantiating a second `WorkingMemory` pointing at the same directory and asserting it sees all three notes. From venv, `python -m cognition_engine.memory` printed the expected memory block and `{'total_notes': 3, 'categories': {'decision': 1, 'pattern': 1, 'bug': 1}, 'files_referenced': ['app.py', 'db.py', 'routes.py']}` followed by “WorkingMemory manual scaffold passed.”
