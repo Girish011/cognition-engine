@@ -74,9 +74,13 @@ class WorkingMemory:
         """
         recent = self.notes[-max_notes:]
         if not recent:
-            return "[No previous notes for this project]"
+            return ""
 
-        lines = ["[PROJECT MEMORY — Previous session notes]"]
+        lines = [
+            "[PROJECT MEMORY — Previous session notes]",
+            "Use these as background only. You still must complete the current "
+            "task using the tool protocol.",
+        ]
         for note in recent:
             lines.append(f"  [{note['category']}] {note['content'][:200]}")
         lines.append("[END PROJECT MEMORY]\n")

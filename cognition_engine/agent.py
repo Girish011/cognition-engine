@@ -16,7 +16,8 @@ from mlx_lm import generate
 from cognition_engine.chi import CHIMonitor
 from cognition_engine.compaction import ContextCompactor
 from cognition_engine.anchors import AnchorManager
-from cognition_engine.prompts import parse_tool_call
+from cognition_engine.memory import WorkingMemory
+from cognition_engine.prompts import build_system_prompt, parse_tool_call
 
 
 class CognitionAgent:
@@ -46,11 +47,20 @@ class CognitionAgent:
         self.auto_approve = auto_approve
 
         # Core systems
+        self.memory = WorkingMemory(working_dir)
         self.chi_monitor = CHIMonitor(model, tokenizer, task)
         self.compactor = ContextCompactor(model, tokenizer)
         self.anchor_mgr = AnchorManager(task)
 
-        self.compactor.set_anchor(task)
+        # Seed the context with a full system prompt that teaches the tool format.
+        system_anchor = build_system_prompt(task)
+        self.compactor.set_anchor(system_anchor)
+
+        # Inject any existing project memory into the context so the agent can
+        # build on previous sessions.
+        memory_context = self.memory.get_context_for_task(task)
+        if memory_context:
+            self.compactor.add_turn("system", memory_context)
 
         # Tool call history
         self.tool_history: List[Dict] = []
@@ -75,71 +85,94 @@ class CognitionAgent:
         print(f"Starting agent on task: {self.task}")
         print(f"Working directory: {os.path.abspath(self.working_dir)}\n")
 
-        while self.turn_count < max_turns:
-            # 1. Check if anchor needed
-            if self.chi_monitor.chi_history:
-                chi = self.chi_monitor.chi_history[-1]
-                anchor = self.anchor_mgr.get_anchor_for_chi(chi)
-                if anchor:
-                    self.compactor.add_turn("system", anchor)
+        try:
+            while self.turn_count < max_turns:
+                # 1. Check if anchor needed
+                if self.chi_monitor.chi_history:
+                    chi = self.chi_monitor.chi_history[-1]
+                    anchor = self.anchor_mgr.get_anchor_for_chi(chi)
+                    if anchor:
+                        self.compactor.add_turn("system", anchor)
 
-            # 2. Build context and generate
-            context = self.compactor._build_context()
+                # 2. Build context and generate
+                context = self.compactor._build_context()
 
-            # Add generation prompt
-            context += "\nAssistant: "
-            response = generate(
-                self.model,
-                self.tokenizer,
-                prompt=context,
-                max_tokens=800,
-            )
-
-            # 3. Parse and execute tool calls
-            tool_calls = self._parse_tool_calls(response)
-            tool_results = []
-
-            for tool_call in tool_calls:
-                result = self._execute_tool(tool_call)
-                tool_results.append(result)
-                self.tool_history.append(tool_call)
-
-            # 4. Add to conversation
-            self.compactor.add_turn("assistant", response)
-            if tool_results:
-                results_text = "\n".join(tool_results)
-                self.compactor.add_turn(
-                    "system", f"[Tool Results]\n{results_text}"
+                # Add generation prompt
+                context += "\nAssistant: "
+                response = generate(
+                    self.model,
+                    self.tokenizer,
+                    prompt=context,
+                    max_tokens=800,
                 )
 
-            # 5. Update CHI
-            chi_result = self.chi_monitor.update(response, context + response)
-            level = self.chi_monitor.get_intervention_level()
+                # 3. Parse and execute tool calls
+                tool_calls = self._parse_tool_calls(response)
+                tool_results = []
 
-            # 6. Display status
-            chi = chi_result["chi_score"]
-            self._print_status(chi, level, tool_calls)
+                for tool_call in tool_calls:
+                    result = self._execute_tool(tool_call)
+                    tool_results.append(result)
+                    self.tool_history.append(tool_call)
 
-            # 7. Check compaction
-            if self.compactor.needs_compaction(chi):
-                if chi < 0.3:
-                    self.compactor.compact("anchor_reset")
-                    print("  [COMPACTION: anchor reset]")
-                elif chi < 0.5:
-                    self.compactor.compact("summarize")
-                    print("  [COMPACTION: summarize]")
-                else:
-                    self.compactor.compact("trim")
-                    print("  [COMPACTION: trim]")
+                # 4. Add to conversation
+                self.compactor.add_turn("assistant", response)
+                if tool_results:
+                    results_text = "\n".join(tool_results)
+                    self.compactor.add_turn(
+                        "system", f"[Tool Results]\n{results_text}"
+                    )
 
-            # 8. Check if model says it's done
-            if self._is_task_complete(response):
-                print("\n Agent reports task complete.")
-                break
+                # 5. Update CHI
+                chi_result = self.chi_monitor.update(response, context + response)
+                level = self.chi_monitor.get_intervention_level()
 
-            self.turn_count += 1
+                # 6. Display status
+                chi = chi_result["chi_score"]
+                self._print_status(chi, level, tool_calls)
 
-        self._print_summary()
+                # 7. Check compaction
+                if self.compactor.needs_compaction(chi):
+                    if chi < 0.3:
+                        self.compactor.compact("anchor_reset")
+                        print("  [COMPACTION: anchor reset]")
+                    elif chi < 0.5:
+                        self.compactor.compact("summarize")
+                        print("  [COMPACTION: summarize]")
+                    else:
+                        self.compactor.compact("trim")
+                        print("  [COMPACTION: trim]")
+
+                # 8. Check if model says it's done
+                if self._is_task_complete(response):
+                    print("\n Agent reports task complete.")
+                    break
+
+                self.turn_count += 1
+        except KeyboardInterrupt:
+            print("\n[KeyboardInterrupt] Stopping agent loop.")
+        finally:
+            # On exit (normal or interrupted), write a context note to memory.
+            chi_final = (
+                self.chi_monitor.chi_history[-1]
+                if self.chi_monitor.chi_history
+                else None
+            )
+            context_note = (
+                f"Session ended. {self.turn_count} turns. "
+                f"Final CHI: {chi_final:.3f}. "
+                f"Files: {self.anchor_mgr.files_modified}"
+                if chi_final is not None
+                else f"Session ended. {self.turn_count} turns. "
+                f"Files: {self.anchor_mgr.files_modified}"
+            )
+            self.memory.add_note(
+                "context",
+                context_note,
+                related_files=self.anchor_mgr.files_modified,
+            )
+
+            self._print_summary()
 
     # ------------------------------------------------------------------
     # Tool parsing and dispatch
@@ -160,8 +193,11 @@ class CognitionAgent:
         parsed = parse_tool_call(response)
         if not parsed:
             return []
-        # The agent loop treats [DONE] specially at a higher level; for now we
-        # surface it as a tool so the caller can decide how to stop.
+        # The agent loop treats [DONE] specially at a higher level; we don't
+        # execute it as a tool call.
+        if parsed.get("tool") == "done":
+            return []
+        # Exactly one tool call per response.
         return [parsed]
 
     def _execute_tool(self, tool_call: Dict) -> str:
@@ -171,7 +207,15 @@ class CognitionAgent:
         if tool == "read":
             return self._tool_read(tool_call["path"])
         if tool == "write":
-            return self._tool_write(tool_call["path"], tool_call["content"])
+            result = self._tool_write(tool_call["path"], tool_call["content"])
+            # Record file purpose in working memory.
+            preview = tool_call["content"][:100]
+            self.memory.add_note(
+                "file_purpose",
+                f"Created or updated {tool_call['path']}: {preview}",
+                related_files=[tool_call["path"]],
+            )
+            return result
         if tool == "edit":
             return self._tool_edit(
                 tool_call["path"],
@@ -181,7 +225,13 @@ class CognitionAgent:
         if tool == "execute":
             return self._tool_execute(tool_call["command"])
         if tool == "think":
-            return f"[Thought recorded: {tool_call['thought'][:100]}]"
+            thought = tool_call["thought"]
+            self.memory.add_note(
+                "decision",
+                thought,
+                related_files=self.anchor_mgr.files_modified,
+            )
+            return f"[Thought recorded: {thought[:100]}]"
         return f"[Unknown tool: {tool}]"
 
     # ------------------------------------------------------------------

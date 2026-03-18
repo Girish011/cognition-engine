@@ -8,7 +8,7 @@ from typing import Optional, Tuple, Dict
 
 
 SYSTEM_PROMPT = """You are Cognition Engine, an AI coding assistant running locally.
-You have access to these tools:
+You have access to these tools and MUST use them with the exact bracketed format:
 
 [READ] path — Read a file
 [WRITE] path
@@ -27,10 +27,27 @@ replacement text
 
 Rules:
 - Use [THINK] before complex decisions
-- Use [READ] before editing a file you haven't seen
-- One tool call per response. Wait for the result before the next action.
-- When the task is fully complete and tested, say [DONE]
+- NEVER guess file contents. Always [READ] a file before you describe, edit, or rely on it.
+- Use [READ] before editing a file you haven't seen in this session.
+- One and only one tool call per response. Wait for the result before the next action.
+- The tool call should be the main content of your response, not buried inside prose.
+- When the task is fully complete and tested, say [DONE] on its own line.
 - Be precise with file paths. Use relative paths from the project root.
+
+Examples (follow these patterns exactly, with a single tool call per response):
+
+[THINK] I should inspect calculator.py before writing any code.
+
+[READ] calculator.py
+
+[WRITE] calculator.py
+```
+class Calculator:
+    def add(self, a, b):
+        return a + b
+```
+
+[EXEC] pytest
 """
 
 
@@ -53,38 +70,67 @@ def parse_tool_call(response: str) -> Dict | None:
 
     text = response.strip()
 
-    # [DONE] has priority: we treat it as task completion
-    if "[DONE]" in text:
+    # [DONE] has priority: we treat it as task completion (case-insensitive)
+    if "[DONE]" in text.upper():
         return {"tool": "done"}
 
-    # Normalize to first non-empty line for directive
+    # Normalize to first non-empty line that looks like a directive
     lines = [ln for ln in text.splitlines() if ln.strip()]
     if not lines:
         return None
-    first = lines[0].strip()
+
+    directive_line = None
+    directive_index = 0
+    for idx, ln in enumerate(lines):
+        stripped = ln.strip()
+        if stripped.startswith("["):
+            directive_line = stripped
+            directive_index = idx
+            break
+    if not directive_line:
+        return None
+
+    first = directive_line
+
+    # Parse directive within brackets, tolerating variants like [Read], [READ]:, [READ] - path
+    if "]" not in first:
+        return None
+    end_bracket = first.find("]")
+    directive = first[1:end_bracket].strip().upper()
+    rest = first[end_bracket + 1 :].lstrip(" :-").strip()
 
     # [READ] path
-    if first.startswith("[READ]"):
-        path = first[len("[READ]") :].strip()
+    if directive == "READ":
+        path = rest
+        if not path:
+            # Fall back to next line if present
+            if directive_index + 1 < len(lines):
+                path = lines[directive_index + 1].strip()
         if not path:
             return None
         return {"tool": "read", "path": path}
 
     # [EXEC] command
-    if first.startswith("[EXEC]"):
-        command = first[len("[EXEC]") :].strip()
+    if directive == "EXEC":
+        command = rest
+        if not command and directive_index + 1 < len(lines):
+            command = lines[directive_index + 1].strip()
         if not command:
             return None
         return {"tool": "execute", "command": command}
 
     # [THINK] thought
-    if first.startswith("[THINK]"):
-        thought = first[len("[THINK]") :].strip()
+    if directive == "THINK":
+        thought = rest
+        if not thought and directive_index + 1 < len(lines):
+            thought = lines[directive_index + 1].strip()
         return {"tool": "think", "thought": thought}
 
     # [WRITE] path\n```\ncontent\n```
-    if first.startswith("[WRITE]"):
-        path = first[len("[WRITE]") :].strip()
+    if directive == "WRITE":
+        path = rest
+        if not path and directive_index + 1 < len(lines):
+            path = lines[directive_index + 1].strip()
         if not path:
             return None
         content = _extract_code_block(text)
@@ -93,8 +139,10 @@ def parse_tool_call(response: str) -> Dict | None:
         return {"tool": "write", "path": path, "content": content}
 
     # [EDIT] path\n```old\n...\n```new\n...\n```
-    if first.startswith("[EDIT]"):
-        path = first[len("[EDIT]") :].strip()
+    if directive == "EDIT":
+        path = rest
+        if not path and directive_index + 1 < len(lines):
+            path = lines[directive_index + 1].strip()
         if not path:
             return None
         old_text, new_text = _extract_edit_blocks(text)
