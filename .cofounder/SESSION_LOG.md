@@ -313,3 +313,18 @@
 - Added a `try/except KeyboardInterrupt` around the main loop with a `finally` block that always records a `"context"` note when the agent exits (normal completion or Ctrl+C), including turn count, final CHI (when available), and the list of modified files; notes are stored in `.cognition/notes.json` under the agent's `working_dir` (e.g., `/tmp/cognition_test/.cognition/notes.json` for the calculator test).
 - Updated `WorkingMemory.get_context_for_task()` to return an empty string when there are no notes (so we don't inject a confusing `[No previous notes for this project]` block) and to prepend a clarifying line: “Use these as background only. You still must complete the current task using the tool protocol.”
 - Smoke test after memory integration & tweak: `python -m scripts.test_agent` — `calculator.py` and `test_calculator.py` created under `/tmp/cognition_test`, `.cognition/notes.json` populated with both `"decision"` and `"file_purpose"` notes (for the calculator class and tests), and `pytest test_calculator.py -v` passes (4/4 tests). Tool behavior remains healthy (think/write/execute across turns) while working memory now records the session.
+
+## 2026-03-18 (Week 5 — TASK-029: Evaluate Qwen3.5/Qwen3 on MLX)
+
+- Added `scripts/eval_qwen35.py`: benchmarks candidate Qwen3.5 models (load/run, tok/s, hidden state extraction via `cognition_engine.hidden_states`, CHI smoke via `CHIMonitor`, and a strict tool-format prompt).
+- Attempted Qwen3.5 model IDs:
+  - `mlx-community/Qwen3.5-4B-Instruct-4bit` → load failed (HF Hub 401 / repo not found).
+  - `mlx-community/Qwen3.5-9B-Instruct-4bit` → load failed (HF Hub 401 / repo not found).
+  - Interpretation: Qwen3.5 quantized repos likely not available on `mlx-community` yet (or names differ). Don’t block on conversion per Week 5 note.
+- Tested a practical “updated model” fallback that *is* available on MLX:
+  - `mlx-community/Qwen3-4B-Instruct-2507-4bit`:
+    - Speed: **86.9 tok/s** for a 300-token generation (faster than the recorded Qwen2.5-Coder-7B ~53 tok/s baseline).
+    - Hidden states: works; observed shape `(1, 56, 2560)` at `layer_idx=16`.
+    - CHI monitoring: works; smoke run produced `chi=0.883 level=1`.
+    - Tool-format prompt: contains tool markers, but often collapses formatting (e.g. puts fences inline) and is less reliably “one tool call only.”
+- Integration test reality check: running the calculator agent loop with Qwen3-4B can prematurely stop after creating only `calculator.py` (missing tests), so for now **keep Qwen2.5-Coder-7B as the default agent model**; treat Qwen3-4B as a fast chat/experimentation option until tool-following is verified.
