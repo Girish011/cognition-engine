@@ -18,6 +18,7 @@ from cognition_engine.compaction import ContextCompactor
 from cognition_engine.anchors import AnchorManager
 from cognition_engine.memory import WorkingMemory
 from cognition_engine.prompts import build_system_prompt, parse_tool_call
+from cognition_engine.session import SessionManager
 
 
 class CognitionAgent:
@@ -48,6 +49,7 @@ class CognitionAgent:
 
         # Core systems
         self.memory = WorkingMemory(working_dir)
+        self.session_mgr = SessionManager(working_dir)
         self.chi_monitor = CHIMonitor(model, tokenizer, task)
         self.compactor = ContextCompactor(model, tokenizer)
         self.anchor_mgr = AnchorManager(task)
@@ -61,6 +63,13 @@ class CognitionAgent:
         memory_context = self.memory.get_context_for_task(task)
         if memory_context:
             self.compactor.add_turn("system", memory_context)
+
+        # If there is an interrupted session, inject resume context so the model
+        # can continue without re-discovering state.
+        if self.session_mgr.has_interrupted_session():
+            resume_ctx = self.session_mgr.get_resume_context()
+            if resume_ctx:
+                self.compactor.add_turn("system", resume_ctx)
 
         # Tool call history
         self.tool_history: List[Dict] = []
@@ -85,6 +94,9 @@ class CognitionAgent:
         print(f"Starting agent on task: {self.task}")
         print(f"Working directory: {os.path.abspath(self.working_dir)}\n")
 
+        status = "interrupted"
+        completed_explicitly = False
+        executed_action_tool = False
         try:
             while self.turn_count < max_turns:
                 # 1. Check if anchor needed
@@ -106,6 +118,30 @@ class CognitionAgent:
                     max_tokens=800,
                 )
 
+                # Treat explicit [DONE] as completion. Do not rely on natural-language
+                # "task is complete" phrases, since those can appear prematurely and
+                # would incorrectly clear resumable session state.
+                parsed_top = parse_tool_call(response)
+                if parsed_top and parsed_top.get("tool") == "done":
+                    # Guardrail: do not allow immediate [DONE] before any real tool
+                    # has been executed. This prevents a resumed session from being
+                    # cleared due to a premature completion.
+                    if not executed_action_tool:
+                        self.compactor.add_turn("assistant", response)
+                        self.compactor.add_turn(
+                            "system",
+                            "[IGNORED DONE] Model emitted [DONE] before executing any "
+                            "tool. Continue with the task using exactly one tool call.",
+                        )
+                        # Do not mark completed; continue loop.
+                        self.turn_count += 1
+                        continue
+                    self.compactor.add_turn("assistant", response)
+                    status = "completed"
+                    completed_explicitly = True
+                    print("\n Agent reports task complete. ([DONE])")
+                    break
+
                 # 3. Parse and execute tool calls
                 tool_calls = self._parse_tool_calls(response)
                 tool_results = []
@@ -114,6 +150,8 @@ class CognitionAgent:
                     result = self._execute_tool(tool_call)
                     tool_results.append(result)
                     self.tool_history.append(tool_call)
+                    if tool_call.get("tool") in {"read", "write", "edit", "execute"}:
+                        executed_action_tool = True
 
                 # 4. Add to conversation
                 self.compactor.add_turn("assistant", response)
@@ -143,15 +181,28 @@ class CognitionAgent:
                         self.compactor.compact("trim")
                         print("  [COMPACTION: trim]")
 
-                # 8. Check if model says it's done
-                if self._is_task_complete(response):
-                    print("\n Agent reports task complete.")
-                    break
-
                 self.turn_count += 1
         except KeyboardInterrupt:
             print("\n[KeyboardInterrupt] Stopping agent loop.")
+            status = "interrupted"
+        except EOFError:
+            # Can happen when stdin is non-interactive (e.g. piped execution)
+            # and a tool requests approval via input().
+            print("\n[EOFError] Input stream closed; stopping agent loop.")
+            status = "interrupted"
         finally:
+            # Persist session state for resume/status inspection.
+            self.session_mgr.save_session(
+                self.task,
+                self.compactor.conversation_turns,
+                self.chi_monitor.chi_history,
+                self.turn_count,
+                self.anchor_mgr.files_modified,
+                status=status,
+            )
+            if status == "completed" and completed_explicitly:
+                self.session_mgr.clear_session()
+
             # On exit (normal or interrupted), write a context note to memory.
             chi_final = (
                 self.chi_monitor.chi_history[-1]
@@ -307,9 +358,6 @@ class CognitionAgent:
         """Check if the model indicates the task is done."""
         markers = [
             "[DONE]",
-            "[TASK COMPLETE]",
-            "task is complete",
-            "all requirements have been met",
         ]
         lower = response.lower()
         return any(m.lower() in lower for m in markers)

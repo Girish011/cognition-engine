@@ -328,3 +328,31 @@
     - CHI monitoring: works; smoke run produced `chi=0.883 level=1`.
     - Tool-format prompt: contains tool markers, but often collapses formatting (e.g. puts fences inline) and is less reliably “one tool call only.”
 - Integration test reality check: running the calculator agent loop with Qwen3-4B can prematurely stop after creating only `calculator.py` (missing tests), so for now **keep Qwen2.5-Coder-7B as the default agent model**; treat Qwen3-4B as a fast chat/experimentation option until tool-following is verified.
+
+## 2026-03-18 (Week 5 — TASK-030: Session management (save/resume))
+
+- Added `cognition_engine/session.py` with `SessionManager`:
+  - Persists session state to `.cognition/session.json` (task, status, turn count, timestamp, CHI history/final, files modified, last 10 conversation turns).
+  - Detects interrupted sessions (`status == "interrupted"`) and builds a `[RESUMING PREVIOUS SESSION]` context block (last CHI, files, last few turns).
+  - Strips common chat-template artifacts (`<|im_start|>`, `<|im_end|>`) from the resume context for readability.
+- Wired into `CognitionAgent`:
+  - Creates `self.session_mgr = SessionManager(working_dir)`.
+  - On startup: if an interrupted session exists, injects resume context as a `system` turn.
+  - On exit: saves session state in `finally` and clears it if status is `"completed"`; on Ctrl+C it saves with `"interrupted"`.
+- Smoke test (auto-approved, short run): ran a 2-turn agent session in `/tmp/session_smoke` and verified `/tmp/session_smoke/.cognition/session.json` exists with `status: interrupted`, and `get_resume_context()` returns the expected resume block.
+- Follow-up fix: tightened completion semantics so the agent only treats **explicit** `[DONE]` as completion (and only then clears `session.json`). This prevents premature natural-language “task complete” outputs from wiping resumable session state.
+- Added an additional guardrail: ignore `[DONE]` if emitted before any real tool action (`read/write/edit/execute`) has run, to prevent resumed sessions from getting cleared by an immediate premature `[DONE]`.
+
+## 2026-03-18 (Week 5 — TASK-031: CLI with agent mode, resume, and status)
+
+- Upgraded `cognition_engine/cli.py` to a subcommand-based CLI (`chat`, `agent`, `status`) and kept backward compatibility (no subcommand defaults to chat).
+- `chat`: existing interactive CHI loop moved into `run_chat`.
+- `agent`: runs `CognitionAgent` with `--task/--dir/--model/--max-turns/--resume/--auto-approve`.
+  - `--resume` uses `SessionManager(dir)` to load an interrupted session and reuses the stored task.
+- `status`: prints `.cognition/session.json` summary (task/status/turns/CHI/files) and `WorkingMemory` summary (note counts/categories/files referenced).
+- Manual checks:
+  - `python -m cognition_engine --help` and `python -m cognition_engine agent --help` OK.
+  - `python -m cognition_engine agent --task "Create hello.py" --dir /tmp/cli_task031 --auto-approve` created `hello.py` and completed via `[DONE]`.
+  - `python -m cognition_engine status --dir /tmp/cli_task031` prints memory summary and no active session.
+  - Resume path exercised on `/tmp/cli_task031_resume` where a non-interactive run produced `EOFError` during approval; session was still written to `.cognition/session.json` and `python -m cognition_engine agent --dir /tmp/cli_task031_resume --resume` loads and starts from resume context.
+- Follow-up robustness: `CognitionAgent.run` now catches `EOFError` (non-interactive stdin) and exits as `interrupted` instead of crashing.
