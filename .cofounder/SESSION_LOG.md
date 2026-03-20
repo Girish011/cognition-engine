@@ -356,3 +356,26 @@
   - `python -m cognition_engine status --dir /tmp/cli_task031` prints memory summary and no active session.
   - Resume path exercised on `/tmp/cli_task031_resume` where a non-interactive run produced `EOFError` during approval; session was still written to `.cognition/session.json` and `python -m cognition_engine agent --dir /tmp/cli_task031_resume --resume` loads and starts from resume context.
 - Follow-up robustness: `CognitionAgent.run` now catches `EOFError` (non-interactive stdin) and exits as `interrupted` instead of crashing.
+
+## 2026-03-18 (Week 5 — TASK-032: MLX community engagement (Path A))
+
+- Prep: identified two high-signal engagement targets (hidden state extraction / hooks pattern + Qwen3.5 model support).
+- Suggested MLX core thread to reference/comment on (intermediate outputs / “hooks” equivalent): `https://github.com/ml-explore/mlx/issues/1056`
+- Suggested mlx-lm Qwen3.5-related thread to reference/comment on (model support / conversion pain): `https://github.com/ml-explore/mlx-lm/pull/957`
+- Draft Discussion post (paste into `ml-explore/mlx-lm` Discussions):
+  - **Title:** "Hidden state extraction patterns for runtime monitoring"
+  - **Body:**
+    - "I’m building a cognitive health monitoring loop on MLX (entropy + repetition + goal-drift) and needed hidden states during/after generation."
+    - "Since MLX doesn’t have PyTorch-style forward hooks, the cleanest pattern I’ve found is to wrap a single layer (or module) with a small `DebugWrapper` / capture wrapper, run a forward pass, then restore it in `finally`."
+    - "This is lightweight, doesn’t require changes to MLX internals, and works well for monitoring use cases."
+    - "Question: has anyone considered adding an optional hook/callback interface to `mlx.nn.Module` (even if limited), or would the project prefer the wrapper pattern as the canonical approach?"
+    - "Happy to share a minimal snippet if useful."
+- Next step (manual): star/watch `ml-explore/mlx-lm`, post the above as a Discussion (not Issue), and optionally add a short comment to issue #1056 linking the wrapper pattern and the monitoring use case. After posting, record the actual URLs and any maintainer replies here.
+- Posted Discussion #3285 on ml-explore/mlx: "Patterns for capturing intermediate layer outputs (forward hooks equivalent)"
+  - URL: https://github.com/ml-explore/mlx/discussions/3285
+  - Shared CaptureWrapper pattern, mx.eval() gotcha, referenced #1056 and mlx-examples#987
+  - No moat revealed: no CHI, no steering, no product details
+- Starred + watched ml-explore/mlx and ml-explore/mlx-lm
+- Followed awni on GitHub
+- TASK-032: COMPLETE
+- Next: check for maintainer replies in 24-48 hours
