@@ -416,3 +416,34 @@ A major limitation of traditional activation steering is that it is "always on".
   - Structural checks passed for every pair (`system`, `positive`, `negative` present)
 - Notes:
   - Pairs were written to emphasize behavior-level contrast (focused execution vs drift, concrete tool use vs guessing/description, working code vs stubs/subtle bugs) instead of superficial wording differences.
+
+## 2026-03-23 (Week 6 — TASK-035: Extract activations from contrastive pairs)
+
+- TASK-035 — Extract Activations from Contrastive Pairs — Completed
+- Created `cognition_engine/steering/extract_activations.py`.
+- Implemented:
+  - `CaptureWrapper` for per-layer output capture during forward pass.
+  - `extract_all_layer_states(model, tokenizer, text, num_layers=None)`:
+    - wraps all transformer layers,
+    - runs a single forward pass,
+    - extracts **last-token** hidden state per layer,
+    - returns `np.ndarray` of shape `(num_layers, hidden_dim)`,
+    - always restores original layers in `finally`.
+  - `extract_contrastive_activations(model, tokenizer, pairs, pair_name)`:
+    - formats positive/negative prompts using chat template,
+    - extracts both sides per pair across all layers,
+    - returns stacked arrays:
+      - `positive`: `(num_pairs, num_layers, hidden_dim)`
+      - `negative`: `(num_pairs, num_layers, hidden_dim)`.
+- Added runnable `__main__` scaffold:
+  - loads `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`,
+  - runs extraction for `task_focus`,
+  - prints shapes,
+  - saves `data/activations_task_focus.npz` (ensures `data/` exists).
+- Verification:
+  - Import/wiring sanity check passed in project venv (`.venv/bin/python`), confirming module imports and pair integration.
+  - Note: full extraction run is model-heavy and should be run as a manual step when ready.
+  - Manual extraction run (2 `task_focus` pairs) completed successfully:
+    - `positive` shape: `(2, 28, 3584)`
+    - `negative` shape: `(2, 28, 3584)`
+    - Cosine similarity at layer 16 (pair 1): `0.636230` (`< 1.0`, so positive/negative representations are meaningfully different).
