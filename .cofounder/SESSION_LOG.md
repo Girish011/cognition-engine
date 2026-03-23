@@ -379,3 +379,40 @@
 - Followed awni on GitHub
 - TASK-032: COMPLETE
 - Next: check for maintainer replies in 24-48 hours
+  
+**Date:** 2026-03-23 (Week 6 — TASK-033: Activation steering and intervention in Large Language Models (LLMs))
+- TASK-033 — Study Steering Math + Architecture Plan — Completed
+### 1. The Core Concept of Activation Engineering
+Activation engineering aims to elicit or control specific LLM behaviors by modifying the model's internal representations during inference, bypassing the need for computationally expensive weight fine-tuning or reinforcement learning. Two foundational techniques drive this approach:
+*   **Activation Addition (ActAdd):** This method extracts a steering vector by calculating the difference in activations between a contrastive pair of prompts (e.g., "Love" versus "Hate"). By adding this vector to the forward pass at inference time, ActAdd can reliably steer high-level output properties like sentiment, tone, and topic. 
+*   **Inference-Time Intervention (ITI):** Designed specifically to enhance model "truthfulness," ITI identifies a sparse subset of attention heads that accurately separate true statements from false ones using linear probes. During text generation, ITI shifts the model's internal activations along these specific truth-correlated directions, improving performance on benchmarks like TruthfulQA.
+
+### 2. Practical Capabilities and Limitations
+Field testing of activation steering has revealed clear boundaries on what can and cannot be effectively controlled:
+*   **Reliably Steerable Behaviors:** Steering vectors are highly effective for altering high-level semantic registers, such as refusal/compliance, formality, sentiment, conciseness, and the expression of uncertainty. 
+*   **Effectively Unsteerable Behaviors:** Activation steering completely fails at injecting specific facts, improving factual accuracy, or aiding in complex, multi-step reasoning.
+*   **Layer Selection:** Behavioral steering (like refusal or formality) is most effective when applied to the late layers (the last 25%) of the model, as these encode high-level intent and style. Conversely, intervening in the early layers often degrades output quality by corrupting low-level language representations.
+*   **Strength Degradation:** The effectiveness of a steering vector (controlled by the intervention strength parameter, $\alpha$) degrades over long generations. After approximately 300 to 500 tokens, the model's autoregressive conditioning gradually pulls its behavior back to its default state. 
+
+### 3. The Advancement of Conditional Activation Steering (CAST)
+A major limitation of traditional activation steering is that it is "always on". For example, injecting a refusal vector causes the model to indiscriminately refuse all prompts, including harmless ones, severely limiting the model's utility. 
+
+**Conditional Activation Steering (CAST)** resolves this by adding programmatic control. It works through the following mechanism:
+*   **Condition Vectors:** CAST introduces a "condition vector" that acts as a trigger by capturing the activation patterns induced by specific prompt categories (e.g., adult content or hate speech). 
+*   **Selective Application:** During inference, the model calculates the similarity between its current hidden state and the condition vector. The behavior vector (e.g., refusal) is only applied if this similarity exceeds a specific threshold.
+*   **Logical Composition:** This allows practitioners to build complex, context-dependent rules without weight optimization, such as "if the input is about hate speech or crime, then add refusal". It can also be inverted to constrain a model to a specific domain, refusing all prompts that do *not* match the target condition.
+
+## 2026-03-23 (Week 6 — TASK-034: Contrastive pair generator)
+
+- TASK-034 — Contrastive Pair Generator — Completed
+- Created `cognition_engine/steering/contrastive_pairs.py` and `cognition_engine/steering/__init__.py`.
+- Implemented three steering pair sets with clear behavioral contrast:
+  - `TASK_FOCUS_PAIRS` (anti-drift / stay on task): 10 pairs
+  - `TOOL_FORMAT_PAIRS` (anti-hallucination / tool protocol compliance): 10 pairs
+  - `CODE_COHERENCE_PAIRS` (anti-degeneration / coherent implementation quality): 10 pairs
+- Added `get_all_pairs()` returning all pair sets and `format_pair_for_model(pair, tokenizer)` that formats positive/negative examples with chat templates so hidden-state extraction is comparable.
+- Manual verification run:
+  - Pair counts: `{'task_focus': 10, 'tool_format': 10, 'code_coherence': 10}`
+  - Structural checks passed for every pair (`system`, `positive`, `negative` present)
+- Notes:
+  - Pairs were written to emphasize behavior-level contrast (focused execution vs drift, concrete tool use vs guessing/description, working code vs stubs/subtle bugs) instead of superficial wording differences.
