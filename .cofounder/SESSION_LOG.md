@@ -447,3 +447,42 @@ A major limitation of traditional activation steering is that it is "always on".
     - `positive` shape: `(2, 28, 3584)`
     - `negative` shape: `(2, 28, 3584)`
     - Cosine similarity at layer 16 (pair 1): `0.636230` (`< 1.0`, so positive/negative representations are meaningfully different).
+
+## 2026-03-23 (Week 6 — TASK-036: Compute steering vectors)
+
+- TASK-036 — Compute Steering Vectors — Completed
+- Created `cognition_engine/steering/compute_vectors.py`.
+- Implemented:
+  - `compute_steering_vectors(activations)`:
+    - computes per-layer vectors as `mean(positive, axis=0) - mean(negative, axis=0)`,
+    - expects activation shape `(num_pairs, num_layers, hidden_dim)`,
+    - validates required keys, shape compatibility, and rank.
+  - `find_best_layer(steering_vectors)`:
+    - computes vector norm per layer,
+    - prints all layer norms with middle-layer marker (11-17),
+    - returns highest-norm layer index and reports best middle-layer candidate.
+  - `save_steering_vectors(vectors, name, output_dir)` + `load_steering_vectors(...)`.
+  - `__main__` runner:
+    - loads `data/activations_{pair_set}.npz` for `task_focus`, `tool_format`, `code_coherence`,
+    - computes vectors, finds best layer, saves to `data/steering_vectors/{pair_set}.npz`,
+    - prints best-layer stats (norm/mean/std),
+    - skips missing activation files with clear message.
+- Manual verification:
+  - Synthetic sanity run with mock activations `(4, 28, 16)` passed.
+  - Output vector shape confirmed `(28, 16)`.
+  - Best-layer selection, save/load round-trip (`np.allclose`) passed.
+  - Temporary sanity artifact (`data/steering_vectors/task036_sanity.npz`) removed after test.
+  - Full end-to-end run with real data completed (TASK-035 -> TASK-036):
+    - Generated activation files for all pair sets:
+      - `data/activations_task_focus.npz`
+      - `data/activations_tool_format.npz`
+      - `data/activations_code_coherence.npz`
+      - each with `positive` and `negative` shapes `(10, 28, 3584)`.
+    - Ran `python -m cognition_engine.steering.compute_vectors` successfully for all 3 sets and saved:
+      - `data/steering_vectors/task_focus.npz`
+      - `data/steering_vectors/tool_format.npz`
+      - `data/steering_vectors/code_coherence.npz`
+    - Lookout checks (from TASK-036) on real output:
+      - Norms are clearly non-uniform across layers (strong separation growth by depth) ✅
+      - Middle layers (11-17) are stronger than early layers, but final layers dominate in this run (`best layer = 27` for all three sets; `best middle layer = 17`) ⚠️
+      - Norms are far from near-zero across sets, so contrastive signal is present (not a weak-pair failure) ✅
