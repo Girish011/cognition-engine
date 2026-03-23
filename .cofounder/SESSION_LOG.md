@@ -486,3 +486,40 @@ A major limitation of traditional activation steering is that it is "always on".
       - Norms are clearly non-uniform across layers (strong separation growth by depth) ✅
       - Middle layers (11-17) are stronger than early layers, but final layers dominate in this run (`best layer = 27` for all three sets; `best middle layer = 17`) ⚠️
       - Norms are far from near-zero across sets, so contrastive signal is present (not a weak-pair failure) ✅
+
+## 2026-03-23 (Week 6 — TASK-037: Steering injection wrapper + engine)
+
+- TASK-037 — Build the Steering Injection Wrapper — Completed
+- Created `cognition_engine/steering/injector.py`.
+- Implemented:
+  - `SteeringWrapper(nn.Module)`:
+    - wraps a transformer layer,
+    - injects `alpha * steering_vector` into hidden states on forward pass,
+    - handles both tensor outputs and tuple outputs `(hidden, cache, ...)`,
+    - supports runtime toggle with `active` flag.
+  - `SteeringEngine`:
+    - `load_vectors(name, layer_idx=None, alpha=1.0, vectors_dir=...)` (auto-select highest-norm layer if not provided),
+    - `activate()`, `deactivate()`, `set_alpha(alpha)`,
+    - `cleanup()` to restore original layers safely,
+    - internal wrap/unwrap with original-layer bookkeeping.
+  - Runnable `__main__` example:
+    - compares generation without steering vs with steering and prints whether outputs differ.
+- Manual test results (real vectors from TASK-036):
+  - Baseline (no steering): normal calculator-class response (`len=838`).
+  - Auto-selected `layer=27`, `alpha=2.0`: response changed but collapsed to near-empty output (`len=1`) — too strong / unstable setting.
+  - Follow-up parameter sweep:
+    - `layer=17, alpha=1.0` -> `len=836`, output non-empty, `identical=False`
+    - `layer=17, alpha=0.5` -> `len=759`, output non-empty, `identical=False`
+    - `layer=16, alpha=1.0` -> `len=681`, output non-empty, `identical=False`
+    - `layer=27, alpha=0.5` -> `len=828`, output non-empty, `identical=False`
+  - Conclusion: steering injection works (responses change), but aggressive top-layer steering (`layer 27`, `alpha=2.0`) can over-steer and degrade output. Middle-layer/lower-alpha settings are more stable for next experiments.
+  - Timing benchmark (latency overhead check):
+    - Config: Qwen2.5-Coder-7B-4bit, `max_tokens=120`, steering `task_focus` at `layer=17`, `alpha=1.0`.
+    - Benchmark 1 (5-run average, separate blocks):
+      - Baseline: `2.2747s`, Steered: `2.2512s` (difference `-23.467ms`, within run-to-run noise)
+    - Benchmark 2 (interleaved A/B, 6 pairs for tighter comparison):
+      - Baseline avg: `2.2181s`
+      - Steered avg: `2.2158s`
+      - Overhead: `-2.364ms / response` (effectively zero; noise-dominated)
+      - Approx overhead per output token: `-0.0197ms/token` (noise floor)
+    - Interpretation: No measurable slowdown from single-layer steering injection in this setup; practical overhead appears negligible and consistent with the "<1ms per layer per token" expectation.
