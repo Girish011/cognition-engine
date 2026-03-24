@@ -652,7 +652,7 @@ print(f"\nResponses identical: {response_before == response_after}")
 ---
 
 ### TASK-038: First Steering Experiment — Prove It Works
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `scripts/steering_experiment.py`
 
 Run a controlled experiment: same prompts, with and without steering,
@@ -713,7 +713,7 @@ This graph is what you'll eventually show in the demo video.
 - [ ] TASK-035: Extract activations from all layers (2-3 hrs)
 - [ ] TASK-036: Compute steering vectors + find best layers (1-2 hrs)
 - [ ] TASK-037: Steering injection wrapper + engine (2-3 hrs)
-- [ ] TASK-038: First steering experiment — prove it works (3-4 hrs)
+- [x] TASK-038: First steering experiment — prove it works (3-4 hrs)
 
 **Total: ~14-19 hours across 3-4 days**
 
