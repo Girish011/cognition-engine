@@ -523,3 +523,17 @@ A major limitation of traditional activation steering is that it is "always on".
       - Overhead: `-2.364ms / response` (effectively zero; noise-dominated)
       - Approx overhead per output token: `-0.0197ms/token` (noise floor)
     - Interpretation: No measurable slowdown from single-layer steering injection in this setup; practical overhead appears negligible and consistent with the "<1ms per layer per token" expectation.
+
+## 2026-03-24 (Week 6 — TASK-038: First steering experiment, CHI comparison)
+
+- TASK-038 — First steering experiment (`scripts/steering_experiment.py`) — Completed run on local hardware.
+- **Setup:** `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit`, `task_focus` vectors, auto layer **27**, **alpha=2.0**, 10 turns (calculator build-out), `max_tokens=300`.
+- **Automated success criteria (from saved summary): both satisfied**
+  - **Mean CHI after turn 5** (turns 5–9): steered **0.832** vs unsteered **0.799** → steered higher ✅
+  - **First turn CHI below 0.7:** both **null** (neither run dropped below threshold) → script marks “steered crosses threshold later” as true (steered never crossed) ✅
+- **Per-turn pattern (terminal):**
+  - Unsteered: CHI mostly high early, then slides **~0.874 → 0.800 → 0.750 → 0.714** on turns 6–9 as context grows (~2.2k–3.2k tokens).
+  - Steered: CHI stays **~0.826–0.906** across all turns; final context ~**400** tokens vs ~**3157** unsteered (steered outputs much shorter — model often stopped well before `max_tokens`).
+- **Interpretation:** Matches the Week 6 “money graph” intent: steered curve stays flatter and higher while unsteered degrades toward the end of the scripted task. **Caveat:** the two runs can differ in response length (same `max_tokens` cap, different early stopping); CHI is not length-matched across arms.
+- **Artifacts:** `data/steering_experiment.json`, `data/steering_experiment.png`.
+- **Note:** A brief experiment with per-turn caps + matched-length CHI replay was **reverted**; it did not fix steering stability and produced degenerate empty steered turns under strong steering. The script again uses the simple protocol: same global `max_tokens` for both conditions, live CHI only.

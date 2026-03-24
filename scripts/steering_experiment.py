@@ -140,7 +140,6 @@ def summarize(unsteered: list[dict], steered: list[dict]) -> dict:
         and mean_after_5_u is not None
         and mean_after_5_s > mean_after_5_u
     )
-    # Steered crosses 0.7 at a strictly later turn index (or never), vs unsteered.
     if cross_s is None:
         steered_crosses_later = True
     elif cross_u is None:
@@ -285,9 +284,8 @@ def main() -> None:
 
     plot_experiment(unsteered, steered, str(out_png))
 
-    s = summary
     print("\n--- Summary ---")
-    print(json.dumps(s, indent=2))
+    print(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":
