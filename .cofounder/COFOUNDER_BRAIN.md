@@ -134,6 +134,11 @@ CLI: python -m cognition_engine (chat mode with color-coded CHI)
 Package restructured as cognition_engine/ with pyproject.toml
 - WEEK 4: Context compaction + agent loop + working memory (TASKS 021-026)
 - WEEK 5: Agent polish + Qwen3.5 eval + MLX community engagement (TASKS 027-032)
+- WEEK 6: Activation steering foundations (TASKS 033-038)
+  Contrastive pairs → hidden state extraction → steering vectors → injection.
+  First experiment: steered vs unsteered CHI comparison.
+- Phase 2 started. EasySteer runs on vLLM/CUDA — no MLX equivalent exists.
+  We're building the first activation steering framework for Apple Silicon.
 
 ## KEY LEARNINGS
 

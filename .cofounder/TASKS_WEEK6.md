@@ -21,14 +21,14 @@ the first one. That's the product.
 ---
 
 ### TASK-033: Study Steering Math + Architecture Plan
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `docs/steering_design.md`
 
 Read ITI Section 3 and the ActAdd paper. Write down the math in your
 own words. This is NOT optional — if you can't explain it, you can't
 debug it.
 
-**Document these in steering_design.md:**
+**Document these in `docs/steering_design.md`:**
 
 1. **The core algorithm (3 steps):**
    - Step 1: Generate contrastive pairs (positive/negative behavior)
@@ -78,7 +78,7 @@ debug it.
 ---
 
 ### TASK-034: Contrastive Pair Generator
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/steering/contrastive_pairs.py`
 
 Steering vectors are computed from **contrastive pairs**: examples of
@@ -204,7 +204,7 @@ failure mode you're correcting.
 ---
 
 ### TASK-035: Extract Activations from Contrastive Pairs
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/steering/extract_activations.py`
 
 This takes the contrastive pairs and runs them through the model to
@@ -359,7 +359,7 @@ print(f"Cosine similarity at layer 16: {cos_sim:.4f}")
 ---
 
 ### TASK-036: Compute Steering Vectors
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/steering/compute_vectors.py`
 
 The actual steering vector computation. This is the core math:
@@ -481,7 +481,7 @@ if __name__ == "__main__":
 ---
 
 ### TASK-037: Build the Steering Injection Wrapper
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Create `cognition_engine/steering/injector.py`
 
 This is the production mechanism: a wrapper that replaces a layer and
@@ -708,11 +708,11 @@ This graph is what you'll eventually show in the demo video.
 ---
 
 ## WEEK 6 CHECKLIST
-- [ ] TASK-033: Steering design doc + architecture plan (2-3 hrs)
-- [ ] TASK-034: Contrastive pair generator — 30+ pairs (3-4 hrs)
-- [ ] TASK-035: Extract activations from all layers (2-3 hrs)
-- [ ] TASK-036: Compute steering vectors + find best layers (1-2 hrs)
-- [ ] TASK-037: Steering injection wrapper + engine (2-3 hrs)
+- [x] TASK-033: Steering design doc + architecture plan (2-3 hrs)
+- [x] TASK-034: Contrastive pair generator — 30+ pairs (3-4 hrs)
+- [x] TASK-035: Extract activations from all layers (2-3 hrs)
+- [x] TASK-036: Compute steering vectors + find best layers (1-2 hrs)
+- [x] TASK-037: Steering injection wrapper + engine (2-3 hrs)
 - [x] TASK-038: First steering experiment — prove it works (3-4 hrs)
 
 **Total: ~14-19 hours across 3-4 days**
