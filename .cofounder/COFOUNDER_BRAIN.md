@@ -113,9 +113,9 @@ Convert command: mlx_lm.convert --hf-path Qwen/Qwen3.5-9B-Instruct --mlx-path ./
 
 ## CURRENT STATUS
 
-- **Week:** 4 of 16
-- **Phase:** Phase 1 — Agent Foundation
-- **Current task:** TASK-021 (Context Compaction Engine)
+- **Week:** 7 of 16
+- **Phase:** Phase 2 — Activation Steering
+- **Current task:** TASK-039
 - **Blockers:** None
 
 ## WHAT'S BEEN BUILT
@@ -134,9 +134,7 @@ CLI: python -m cognition_engine (chat mode with color-coded CHI)
 Package restructured as cognition_engine/ with pyproject.toml
 - WEEK 4: Context compaction + agent loop + working memory (TASKS 021-026)
 - WEEK 5: Agent polish + Qwen3.5 eval + MLX community engagement (TASKS 027-032)
-- WEEK 6: Activation steering foundations (TASKS 033-038)
-  Contrastive pairs → hidden state extraction → steering vectors → injection.
-  First experiment: steered vs unsteered CHI comparison.
+- WEEK 6: Activation steering pipeline complete. Contrastive pairs (30), steering vectors computed for 3 behavior types, SteeringEngine with injection/cleanup. First experiment: steering changes behavior, over-steering at layer 27/alpha 2.0 kills output. Layer 17/alpha 1.0 is promising.
 - Phase 2 started. EasySteer runs on vLLM/CUDA — no MLX equivalent exists.
   We're building the first activation steering framework for Apple Silicon.
 
@@ -189,4 +187,5 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
 - Turkey problem: neural intervention more durable than wrappers but not immune.
 - Qwen3.5: self-convert via mlx_lm.convert. DeltaNet hybrid attention needs testing.
 - Strategy: build privately, reach Apple through MLX team + demo video.
+- Layer 27 + alpha 2.0 = dead output (0 tokens). Middle layers (14-20) + moderate alpha (0.5-1.5) produce actual changed responses. Vector norms are non-uniform across layers — strongest at layer 27 but that doesn't mean best for steering.
 
