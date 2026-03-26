@@ -60,6 +60,8 @@ class SteeringEngine:
         name: str,
         layer_idx: int | None = None,
         alpha: float = 1.0,
+        *,
+        normalize: bool = False,
         vectors_dir: str = "data/steering_vectors",
     ) -> int:
         """
@@ -84,8 +86,14 @@ class SteeringEngine:
             raise IndexError(f"Invalid layer_idx={layer_idx} for model with {len(self.model.model.layers)} layers.")
 
         vector = vectors[layer_idx]
+        if normalize:
+            n = float(np.linalg.norm(vector))
+            if n <= 0:
+                raise ValueError(f"Cannot normalize zero-norm steering vector at layer {layer_idx}.")
+            vector = vector / n
         self._wrap_layer(layer_idx, vector, alpha)
-        print(f"Loaded '{name}' steering at layer {layer_idx}, alpha={alpha}")
+        norm_tag = " (normalized)" if normalize else ""
+        print(f"Loaded '{name}' steering at layer {layer_idx}, alpha={alpha}{norm_tag}")
         return layer_idx
 
     def _wrap_layer(self, layer_idx: int, vector: np.ndarray, alpha: float) -> None:

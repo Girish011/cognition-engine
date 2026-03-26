@@ -537,3 +537,42 @@ A major limitation of traditional activation steering is that it is "always on".
 - **Interpretation:** Matches the Week 6 “money graph” intent: steered curve stays flatter and higher while unsteered degrades toward the end of the scripted task. **Caveat:** the two runs can differ in response length (same `max_tokens` cap, different early stopping); CHI is not length-matched across arms.
 - **Artifacts:** `data/steering_experiment.json`, `data/steering_experiment.png`.
 - **Note:** A brief experiment with per-turn caps + matched-length CHI replay was **reverted**; it did not fix steering stability and produced degenerate empty steered turns under strong steering. The script again uses the simple protocol: same global `max_tokens` for both conditions, live CHI only.
+
+## 2026-03-25 (Week 7 — TASK-039: Alpha/Layer Sweep updates)
+
+- Implemented TASK-039 sweep runner as `scripts/steering_sweep.py` (9 layers × 5 alphas = 45 runs, 5-turn conversation).
+- **Baseline variance control:** script runs the **unsteered baseline first** and caches it to `data/steering_sweep_baseline.json`; every steered run computes `response_changed` against this cached baseline (rerun baseline only with `--recompute-baseline`).
+- **Normalized second pass (requested change):** added a follow-up pass that re-runs the **top 5** (layer, alpha) pairs using **L2-normalized steering vectors** (vector / ||vector||, then injection scales by alpha).
+  - Added `normalize` flag to `SteeringEngine.load_vectors(..., normalize=True/False)` in `cognition_engine/steering/injector.py`.
+- Outputs:
+  - `data/steering_sweep.json` (all 45 results + `top5_raw` + `normalized_followup`)
+  - `data/steering_sweep.png` heatmap (x=layer, y=alpha, color=mean_chi; dead cells marked with X)
+- Run:
+  - `python3 scripts/steering_sweep.py`
+  - Optional: `python3 scripts/steering_sweep.py --vector-name task_focus --max-tokens 250`
+
+## 2026-03-25 (Week 7 — TASK-040: Updated implementation scaffold)
+
+- Implemented `scripts/steering_experiment_v2.py` per updated TASK-040 instructions.
+- Supports 4 conditions with calibrated defaults (raw vectors only):
+  - `baseline`
+  - `task_focus` @ layer 16, alpha 0.5
+  - `tool_format` @ layer 16, alpha 0.5
+  - `code_coherence` @ layer 16, alpha 0.5
+- Tracks required per-turn fields for each condition:
+  - `turn`, `chi_score`, `chi_raw`
+  - `entropy`, `repetition`, `goal_drift`
+  - `response_length`, `context_length`, `response_preview` (100 chars)
+- Added CLI modes for thermal management and staged execution:
+  - `--condition baseline|task_focus|tool_format|code_coherence|all`
+  - `--cooldown-between-runs` (default 120s when running `--condition all`)
+  - `--plot-only` to regenerate combined graph from saved JSON without rerunning model inference.
+- Outputs:
+  - `data/steering_experiment_v2.json` (all condition data + computed summary)
+  - `data/steering_experiment_v2.png` with:
+    - top subplot: 4 CHI curves + threshold line (0.7)
+    - bottom subplot: response length per turn for each condition
+- Summary now computes the updated success checks:
+  - responses alive (>20 tokens for all 10 turns on steered runs),
+  - at least one vector improving mean CHI on turns 5–9 vs baseline,
+  - per-vector length parity within 50% of baseline mean response length.

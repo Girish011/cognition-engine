@@ -188,4 +188,16 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
 - Qwen3.5: self-convert via mlx_lm.convert. DeltaNet hybrid attention needs testing.
 - Strategy: build privately, reach Apple through MLX team + demo video.
 - Layer 27 + alpha 2.0 = dead output (0 tokens). Middle layers (14-20) + moderate alpha (0.5-1.5) produce actual changed responses. Vector norms are non-uniform across layers — strongest at layer 27 but that doesn't mean best for steering.
-
+- TASK-039 sweep results: Layer 16 is most stable for task_focus vectors.
+  Best settings: L16/α0.5 (CHI 0.953) and L16/α0.25 (CHI 0.952).
+  Alpha 1.0 kills output at ALL tested layers. Normalized vectors too weak.
+  Raw vectors + low alpha is the path forward.
+  CAVEAT: 5-turn sweep doesn't reach degradation zone. Need 10+ turn validation.
+- TASK-040 results (10-turn calibrated experiment, layer 16, alpha 0.5):
+  - task_focus: FAILED. Kills output at turn 5. Do not use.
+  - tool_format: PASSED. All turns alive, +0.011 CHI improvement, length parity.
+    Best reliable vector. Default for agent integration.
+  - code_coherence: STRONG but fragile. +0.020 CHI improvement, dies turn 9.
+    Try alpha 0.25 to stabilize. Highest potential if over-steering is fixed.
+  - Baseline degrades 0.87→0.71 (turns 6-9) via repetition collapse.
+    tool_format resists this collapse. code_coherence resists it longer.
