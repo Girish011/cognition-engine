@@ -14,6 +14,22 @@ import mlx.nn as nn
 import numpy as np
 
 
+def compute_adaptive_alpha(chi_score: float, base_alpha: float = 0.5) -> float:
+    """
+    Lower CHI = stronger steering. Piecewise linear (P-only controller).
+
+    CHI >= 0.8 -> alpha = 0.0
+    CHI >= 0.3 -> linear ramp from 0.0 (CHI=0.8) to 1.5*base (CHI=0.3)
+    CHI < 0.3  -> alpha = 1.5*base (capped; escalate to Level 3/4)
+    """
+    if chi_score >= 0.8:
+        return 0.0
+    if chi_score >= 0.3:
+        t = (0.8 - chi_score) / 0.5  # 0.0 at CHI=0.8, 1.0 at CHI=0.3
+        return float(base_alpha) * (0.6 + t * 0.9)
+    return float(base_alpha) * 1.5
+
+
 class SteeringWrapper(nn.Module):
     """
     Wraps a transformer layer and injects a steering vector.

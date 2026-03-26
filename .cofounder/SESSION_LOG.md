@@ -591,3 +591,19 @@ A major limitation of traditional activation steering is that it is "always on".
   - Cleanup restores original layers on exit.
 - Session save/resume: `SessionManager` now persists `steering_active` in `.cognition/session.json` and restores active steering state on resume.
 - CLI help text updated to describe Level 2 intervention (no adaptive alpha).
+
+## 2026-03-26 (Week 7 — TASK-042: Adaptive alpha + Level 3 compaction check)
+
+- Re-introduced adaptive alpha in `cognition_engine/steering/injector.py` with `compute_adaptive_alpha(chi_score, base_alpha=0.5)`:
+  - CHI >= 0.8 -> alpha 0.0
+  - CHI in [0.3, 0.8) -> piecewise-linear ramp to `1.5 * base_alpha`
+  - CHI < 0.3 -> capped at `1.5 * base_alpha`
+- Integrated into `cognition_engine/agent.py` steering loop:
+  - computes adaptive alpha after each CHI update,
+  - applies alpha when steering activates and updates alpha every turn while steering stays active,
+  - activation/deactivation thresholds remain 0.7 / 0.8 (hysteresis),
+  - status line continues to print current alpha.
+- Added explicit Level-3 compaction trigger path:
+  - when `chi < 0.5` and `needs_compaction(chi)` is true, logs
+    `[COMPACTION] Level 3 triggered ...` and runs `compact("auto")`.
+- Quick sanity check for adaptive alpha mapping (base=0.5): `CHI 0.8 -> 0.0`, `0.7 -> 0.39`, `0.5 -> 0.57`, `0.3 -> 0.75`, `0.2 -> 0.75`.

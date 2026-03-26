@@ -395,53 +395,169 @@ caffeinate -dimsu .venv/bin/python3 -u scripts/test_agent.py --enable-steering
 
 ### TASK-042: Adaptive Alpha — CHI Drives Steering Strength
 **Status:** ⬜ TODO
-**Do:** Add adaptive alpha to `SteeringEngine`
+**Do:** Add adaptive alpha to `SteeringEngine` + verify Level 3 compaction fires
 
-Fixed alpha is a blunt instrument. The field guide warns that steering
-strength should vary based on how much correction is needed. This is
-where CHI becomes the control signal for a feedback loop.
+---
 
-**Formula:**
+#### Why This Task Exists
+
+TASK-041 showed fixed alpha 0.5 doesn't arrest decline. CHI fell from
+0.67 → 0.53 over 17 turns with steering ON the entire time. Two fixes:
+1. Push harder when CHI is low (adaptive alpha — this task)
+2. Make sure Level 3 compaction actually fires when steering fails
+   (compaction check — also this task, because if Level 3 is broken,
+   adaptive alpha alone won't save anything)
+
+---
+
+#### Part A: Adaptive Alpha Formula
+
 ```python
-def compute_adaptive_alpha(chi_score: float, base_alpha: float = 1.0) -> float:
+def compute_adaptive_alpha(chi_score: float, base_alpha: float = 0.5) -> float:
     """
-    Lower CHI = stronger steering. Linear interpolation.
-    
-    CHI 0.8+ → alpha = 0.0 (no steering needed)
-    CHI 0.7  → alpha = base_alpha * 0.5 (mild correction)
-    CHI 0.5  → alpha = base_alpha * 1.0 (full correction)
-    CHI 0.3  → alpha = base_alpha * 1.5 (strong correction)
-    CHI < 0.3 → escalate to Level 3/4 (steering alone won't save it)
+    Lower CHI = stronger steering. Piecewise linear.
+
+    CRITICAL: base_alpha default is 0.5, NOT 1.0.
+    TASK-039 proved alpha >= 1.0 kills output at all tested layers.
+    Max effective alpha is base_alpha * 1.5 = 0.75 (untested but below
+    the 1.0 cliff). If 0.75 causes dead output, cap at 1.2x (0.60).
+
+    CHI >= 0.8  → alpha = 0.0   (healthy, no steering)
+    CHI  = 0.7  → alpha = 0.3   (mild — steering just activated)
+    CHI  = 0.5  → alpha = 0.5   (moderate — matching TASK-040 level)
+    CHI  = 0.3  → alpha = 0.75  (strong — last resort before Level 3/4)
+    CHI  < 0.3  → alpha = 0.75  (capped — escalate to compaction/cloud)
+
+    The key insight: at CHI 0.7 (activation threshold), start GENTLE.
+    At CHI 0.5 (where TASK-041 failed), match the proven TASK-040 alpha.
+    Only push past 0.5 when we're in deep trouble (CHI < 0.5).
     """
     if chi_score >= 0.8:
         return 0.0
     elif chi_score >= 0.3:
         # Linear from 0.0 at CHI=0.8 to 1.5*base at CHI=0.3
         t = (0.8 - chi_score) / 0.5  # 0.0 at CHI=0.8, 1.0 at CHI=0.3
-        return base_alpha * (0.5 + t * 1.0)  # 0.5x to 1.5x base
+        return base_alpha * (0.6 + t * 0.9)  # 0.3 at CHI=0.7, 0.75 at CHI=0.3
     else:
-        return base_alpha * 1.5  # max steering before escalation
+        return base_alpha * 1.5  # 0.75 — capped, don't go higher
+
+# Quick reference table (base_alpha=0.5):
+# CHI 0.80 → alpha 0.00
+# CHI 0.75 → alpha 0.18
+# CHI 0.70 → alpha 0.30  ← steering activates here
+# CHI 0.65 → alpha 0.39
+# CHI 0.60 → alpha 0.48
+# CHI 0.55 → alpha 0.57
+# CHI 0.50 → alpha 0.50  ← TASK-040 experiment level
+# CHI 0.40 → alpha 0.66
+# CHI 0.30 → alpha 0.75  ← max before escalation
 ```
 
-**Integrate into agent loop:**
+---
+
+#### Part B: Integrate into Agent Loop
+
 ```python
-# After CHI update each turn:
-alpha = compute_adaptive_alpha(chi_score, base_alpha=BEST_ALPHA)
-self.steering.set_alpha(alpha)
+# In the agent loop, AFTER CHI update each turn:
+
+if self.steering_enabled:
+    chi = self.monitor.chi_history[-1]
+
+    # Compute adaptive alpha regardless of whether steering is active
+    alpha = compute_adaptive_alpha(chi, base_alpha=STEERING_ALPHA)
+
+    if chi < STEERING_ACTIVATE_THRESHOLD and not self.steering_active:
+        self.steering.activate()
+        self.steering_active = True
+        self.steering.set_alpha(alpha)
+        print(f"[STEERING] ⚡ ACTIVATED at turn {turn} — CHI={chi:.3f}, alpha={alpha:.3f}")
+
+    elif chi > STEERING_DEACTIVATE_THRESHOLD and self.steering_active:
+        self.steering.deactivate()
+        self.steering_active = False
+        print(f"[STEERING] ✓ Deactivated at turn {turn} — CHI={chi:.3f}")
+
+    elif self.steering_active:
+        # Steering already active — update alpha based on current CHI
+        self.steering.set_alpha(alpha)
 ```
 
-**This is our implementation of the CAST/PID paradigm:**
-- CAST = conditional activation (steer only when needed)
-- PID-based steering = strength proportional to error signal
-- We combine both: CHI triggers activation AND controls magnitude
+Status line update:
+```
+Turn  7 | CHI=0.683 | STEERING: ON (alpha=0.390) | Tools: write
+Turn  8 | CHI=0.612 | STEERING: ON (alpha=0.480) | Tools: exec
+Turn  9 | CHI=0.812 | STEERING: OFF              | Tools: think
+```
 
-**Manual test:** Run a 15-turn agent session. Verify:
-- Alpha starts at 0 when CHI is healthy
-- Alpha increases as CHI degrades
-- Alpha prints in the CHI status line so you can see it changing
+---
 
-**Time:** 1-2 hours
-**Git:** `git commit -m "TASK-042: adaptive alpha — CHI controls steering strength"`
+#### Part C: Verify Level 3 Compaction Actually Fires
+
+TASK-041 showed CHI dropped to 0.526 — well below the Level 3 threshold
+(CHI < 0.5 per intervention ladder). Compaction should have fired but
+didn't (`Compactions: 0`).
+
+**Check in agent.py:**
+1. Is `needs_compaction(chi_score)` being called each turn?
+2. Is it checking `chi_score < 0.5`?
+3. If yes, does it actually call `compact()` and reset context?
+
+If compaction is NOT wired in the agent loop, wire it now:
+
+```python
+# After steering update, check if Level 3 needed:
+if chi < 0.5:
+    if self.compactor.needs_compaction(chi):
+        print(f"[COMPACTION] Level 3 triggered at turn {turn} — CHI={chi:.3f}")
+        self.compactor.compact(strategy="auto")
+```
+
+**This is critical.** Without Level 3, the intervention ladder is broken.
+Steering (Level 2) slows decline but doesn't reverse it. Compaction
+(Level 3) resets context which is the actual fix for accumulated garbage.
+
+---
+
+#### Manual Test
+
+Run the same scenario that failed in TASK-041:
+
+```bash
+caffeinate -dimsu .venv/bin/python3 -u -m cognition_engine agent \
+  --task "Create calculator.py and tests, run pytest" \
+  --dir /tmp/task042_test \
+  --enable-steering \
+  --max-turns 20
+```
+
+**Observe and record:**
+1. Does alpha increase as CHI drops? (Print the alpha value each turn)
+2. Does higher alpha help more than fixed 0.5 did in TASK-041?
+3. Does Level 3 compaction fire if CHI drops below 0.5?
+4. After compaction fires, does CHI recover?
+5. Does the model ever break out of the [THINK] loop?
+
+**Realistic expectation:** Adaptive alpha alone probably won't fix the
+[THINK] loop problem. The model gets stuck because accumulated context
+is confusing it, not because the steering vector is too weak. Compaction
+(clearing old context) is the real fix. Adaptive alpha + compaction
+together should produce the recovery that neither achieves alone.
+
+---
+
+#### What NOT to Do
+
+- Don't implement PID (integral/derivative). This is proportional-only.
+  Note in code: "P-only controller. I/D components deferred to Week 8
+  if proportional response is insufficient."
+- Don't change the vector (still tool_format) or layer (still 16)
+- Don't implement multi-vector yet (TASK-043)
+
+---
+
+**Time:** 2-3 hours (formula is simple, but verifying compaction fires adds scope)
+**Git:** `git commit -m "TASK-042: adaptive alpha + verify Level 3 compaction fires"`
+
 
 ---
 

@@ -21,7 +21,7 @@ from cognition_engine.prompts import build_system_prompt, parse_tool_call
 from cognition_engine.session import SessionManager
 
 # ------------------------------------------------------------------
-# Steering (TASK-041)
+# Steering (TASK-041/042)
 # ------------------------------------------------------------------
 STEERING_VECTOR = "tool_format"
 STEERING_LAYER = 16
@@ -219,20 +219,38 @@ class CognitionAgent:
                 # 6. Display status
                 chi = chi_result["chi_score"]
                 if self.enable_steering and self.steering is not None:
+                    from cognition_engine.steering.injector import compute_adaptive_alpha
+
+                    # TASK-042: adaptive proportional control (P-only).
+                    alpha = compute_adaptive_alpha(chi, base_alpha=STEERING_ALPHA)
+                    self.steering_alpha_current = alpha
+
                     # Conditional activation (TASK-041): hysteresis band.
                     if chi < STEERING_ACTIVATE_THRESHOLD and not self.steering_active:
+                        self.steering.set_alpha(alpha)
                         self.steering.activate()
                         self.steering_active = True
-                        print(f"[STEERING] ACTIVATED at turn {self.turn_count} — CHI={chi:.3f}")
+                        print(
+                            f"[STEERING] ACTIVATED at turn {self.turn_count} — "
+                            f"CHI={chi:.3f}, alpha={alpha:.3f}"
+                        )
                     elif chi > STEERING_DEACTIVATE_THRESHOLD and self.steering_active:
                         self.steering.deactivate()
                         self.steering_active = False
                         print(f"[STEERING] Deactivated at turn {self.turn_count} — CHI={chi:.3f}")
+                    elif self.steering_active:
+                        self.steering.set_alpha(alpha)
 
                 self._print_status(chi, level, tool_calls)
 
                 # 7. Check compaction
-                if self.compactor.needs_compaction(chi):
+                if chi < 0.5 and self.compactor.needs_compaction(chi):
+                    print(
+                        f"[COMPACTION] Level 3 triggered at turn {self.turn_count} — "
+                        f"CHI={chi:.3f}"
+                    )
+                    self.compactor.compact("auto")
+                elif self.compactor.needs_compaction(chi):
                     if chi < 0.3:
                         self.compactor.compact("anchor_reset")
                         print("  [COMPACTION: anchor reset]")

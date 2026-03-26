@@ -214,3 +214,11 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
 - Run 1 (test_agent.py) worked well: CHI recovered 0.698→0.811, files created,
   tests run. The existing prompt + tool protocol from TASK-027 matters more than
   steering for basic task completion.
+- TASK-042 COMPLETE. Adaptive alpha working: alpha ramps 0.30→0.75 as CHI drops.
+  Level 3 compaction path wired but untested (CHI bottomed at 0.540, threshold 0.5).
+- CONFIRMED: Steering alone (fixed or adaptive) cannot recover a model stuck in
+  degenerate [THINK] loop. 3 consecutive runs show same pattern.
+- Steering's real value: preventing degradation when model is still functional,
+  not recovering from deep failure. Level 3 (compaction) is the recovery mechanism.
+- CHI calibration issue: shorter/emptier responses inflate CHI artificially.
+  CHI "recovery" from 0.540→0.632 was model producing less, not producing better.
