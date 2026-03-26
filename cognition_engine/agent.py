@@ -20,6 +20,15 @@ from cognition_engine.memory import WorkingMemory
 from cognition_engine.prompts import build_system_prompt, parse_tool_call
 from cognition_engine.session import SessionManager
 
+# ------------------------------------------------------------------
+# Steering (TASK-041)
+# ------------------------------------------------------------------
+STEERING_VECTOR = "tool_format"
+STEERING_LAYER = 16
+STEERING_ALPHA = 0.5
+STEERING_ACTIVATE_THRESHOLD = 0.7
+STEERING_DEACTIVATE_THRESHOLD = 0.8
+
 
 class CognitionAgent:
     """
@@ -40,12 +49,15 @@ class CognitionAgent:
         task: str,
         working_dir: str = ".",
         auto_approve: bool = False,
+        *,
+        enable_steering: bool = False,
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.task = task
         self.working_dir = working_dir
         self.auto_approve = auto_approve
+        self.enable_steering = bool(enable_steering)
 
         # Core systems
         self.memory = WorkingMemory(working_dir)
@@ -74,6 +86,45 @@ class CognitionAgent:
         # Tool call history
         self.tool_history: List[Dict] = []
         self.turn_count = 0
+
+        # Steering state (optional)
+        self.steering = None
+        self.steering_active = False
+        self.steering_alpha_current = 0.0
+        if self.enable_steering:
+            try:
+                from cognition_engine.steering.injector import SteeringEngine
+
+                self.steering = SteeringEngine(model)
+                self.steering.load_vectors(
+                    STEERING_VECTOR,
+                    layer_idx=STEERING_LAYER,
+                    alpha=STEERING_ALPHA,
+                    normalize=False,
+                )
+                # Start inactive; CHI controls activation.
+                self.steering.deactivate()
+                self.steering_alpha_current = STEERING_ALPHA
+                print(
+                    f"[STEERING] Loaded {STEERING_VECTOR} at layer {STEERING_LAYER}, "
+                    f"alpha={STEERING_ALPHA} (inactive until CHI < {STEERING_ACTIVATE_THRESHOLD})"
+                )
+
+                # If resuming an interrupted session, restore steering_active state.
+                if self.session_mgr.has_interrupted_session():
+                    session = self.session_mgr.load_session()
+                    if session and session.steering_active:
+                        self.steering.activate()
+                        self.steering_active = True
+                        print("[STEERING] Restored active steering from interrupted session.")
+            except FileNotFoundError:
+                print("[STEERING] Warning: vectors not found; steering disabled")
+                self.enable_steering = False
+                self.steering = None
+            except Exception as e:  # noqa: BLE001
+                print(f"[STEERING] Warning: failed to initialize steering; disabled. Error: {e}")
+                self.enable_steering = False
+                self.steering = None
 
     # ------------------------------------------------------------------
     # Main loop
@@ -167,6 +218,17 @@ class CognitionAgent:
 
                 # 6. Display status
                 chi = chi_result["chi_score"]
+                if self.enable_steering and self.steering is not None:
+                    # Conditional activation (TASK-041): hysteresis band.
+                    if chi < STEERING_ACTIVATE_THRESHOLD and not self.steering_active:
+                        self.steering.activate()
+                        self.steering_active = True
+                        print(f"[STEERING] ACTIVATED at turn {self.turn_count} — CHI={chi:.3f}")
+                    elif chi > STEERING_DEACTIVATE_THRESHOLD and self.steering_active:
+                        self.steering.deactivate()
+                        self.steering_active = False
+                        print(f"[STEERING] Deactivated at turn {self.turn_count} — CHI={chi:.3f}")
+
                 self._print_status(chi, level, tool_calls)
 
                 # 7. Check compaction
@@ -191,6 +253,12 @@ class CognitionAgent:
             print("\n[EOFError] Input stream closed; stopping agent loop.")
             status = "interrupted"
         finally:
+            if self.enable_steering and self.steering is not None:
+                try:
+                    self.steering.cleanup()
+                except Exception:
+                    pass
+
             # Persist session state for resume/status inspection.
             self.session_mgr.save_session(
                 self.task,
@@ -198,6 +266,7 @@ class CognitionAgent:
                 self.chi_monitor.chi_history,
                 self.turn_count,
                 self.anchor_mgr.files_modified,
+                steering_active=(self.steering_active if self.enable_steering else False),
                 status=status,
             )
             if status == "completed" and completed_explicitly:
@@ -372,9 +441,14 @@ class CognitionAgent:
             if tool_calls
             else "none"
         )
+        steering_str = ""
+        if self.enable_steering and self.steering is not None:
+            state = "ON" if self.steering_active else "OFF"
+            steering_str = f" | STEERING: {state} (alpha={self.steering_alpha_current:.3f})"
+
         print(
             f"  Turn {self.turn_count:3d} | {color}CHI {chi:.3f} "
-            f"L{level}\033[0m | Tools: {tools_str}"
+            f"L{level}\033[0m{steering_str} | Tools: {tools_str}"
         )
 
     def _print_summary(self):

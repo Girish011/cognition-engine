@@ -576,3 +576,18 @@ A major limitation of traditional activation steering is that it is "always on".
   - responses alive (>20 tokens for all 10 turns on steered runs),
   - at least one vector improving mean CHI on turns 5–9 vs baseline,
   - per-vector length parity within 50% of baseline mean response length.
+
+## 2026-03-26 (Week 7 — TASK-042: Adaptive alpha in agent loop)
+
+- (Reverted) This entry was superseded: we rolled back adaptive alpha (TASK-042) in favor of completing TASK-041 first.
+
+## 2026-03-26 (Week 7 — TASK-041: CHI-triggered steering in agent loop)
+
+- Implemented CHI-triggered steering (fixed alpha) in `cognition_engine/agent.py`:
+  - `--enable-steering` flag enables steering (default off).
+  - Loads `tool_format` vectors once at init via `SteeringEngine.load_vectors(...)` (layer 16, alpha 0.5), starts inactive.
+  - After each CHI update: activates steering when CHI < 0.7, deactivates when CHI > 0.8 (hysteresis).
+  - Status line prints steering state: `STEERING: ON/OFF (alpha=0.500)`.
+  - Cleanup restores original layers on exit.
+- Session save/resume: `SessionManager` now persists `steering_active` in `.cognition/session.json` and restores active steering state on resume.
+- CLI help text updated to describe Level 2 intervention (no adaptive alpha).

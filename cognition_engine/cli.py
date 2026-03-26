@@ -117,6 +117,7 @@ def run_agent(args: argparse.Namespace) -> None:
         task,
         working_dir=working_dir,
         auto_approve=args.auto_approve,
+        enable_steering=args.enable_steering,
     )
     agent.run(max_turns=args.max_turns)
 
@@ -177,6 +178,11 @@ def main() -> None:
         "--auto-approve",
         action="store_true",
         help="Auto-approve shell commands (dangerous)",
+    )
+    agent_parser.add_argument(
+        "--enable-steering",
+        action="store_true",
+        help="Enable CHI-triggered activation steering (Level 2 intervention)",
     )
 
     # Status

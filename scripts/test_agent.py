@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
+from pathlib import Path
 
 from mlx_lm import load
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cognition_engine.agent import CognitionAgent
 

@@ -24,6 +24,7 @@ class SessionState:
     chi_final: float | None
     files_modified: list[str]
     conversation_turns: list[dict[str, Any]]
+    steering_active: bool
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +36,7 @@ class SessionState:
             "chi_final": self.chi_final,
             "files_modified": self.files_modified,
             "conversation_turns": self.conversation_turns,
+            "steering_active": self.steering_active,
         }
 
     @staticmethod
@@ -73,6 +75,7 @@ class SessionState:
             chi_final=chi_final_f,
             files_modified=[str(f) for f in files if isinstance(f, (str, int))],
             conversation_turns=[t for t in turns if isinstance(t, dict)],
+            steering_active=bool(d.get("steering_active", False)),
         )
 
 
@@ -91,6 +94,8 @@ class SessionManager:
         chi_history: list[float],
         turn_count: int,
         files_modified: list[str],
+        *,
+        steering_active: bool = False,
         status: str = "interrupted",
     ) -> SessionState:
         """Save current session state to disk."""
@@ -103,6 +108,7 @@ class SessionManager:
             chi_final=(chi_history[-1] if chi_history else None),
             files_modified=list(files_modified or []),
             conversation_turns=list((conversation_turns or [])[-10:]),
+            steering_active=bool(steering_active),
         )
         with open(self.session_file, "w") as f:
             json.dump(state.to_dict(), f, indent=2)

@@ -55,31 +55,162 @@ dead cells marked with X where response_alive=False)
 
 ---
 
-### TASK-040: Re-run TASK-038 Experiment with Calibrated Parameters
+### TASK-040: Re-run Steering Experiment with Calibrated Parameters
 **Status:** ⬜ TODO
-**Do:** Update `scripts/steering_experiment.py` or create `scripts/steering_experiment_v2.py`
+**Do:** Create `scripts/steering_experiment_v2.py`
 
-Re-run the full 10-turn experiment using the best (layer, alpha) pair
-found in TASK-039. This time you need to verify:
+Week 6 experiment (TASK-038) used layer 27 + alpha 2.0 — over-steered.
+TASK-039 sweep found the Goldilocks zone. Now re-run with real parameters
+and push context INTO the degradation zone (past turn 10, past 2000 tokens).
 
-1. Steered responses are non-empty on ALL turns (>20 tokens each)
-2. Steered CHI is higher than unsteered after turn 5
-3. Responses are qualitatively different (manual review of 3-4 turns)
+---
 
-**Also add to the experiment:**
-- Run all 3 vector types separately: task_focus, tool_format, code_coherence
-- Compare: which vector has the most impact on CHI?
-- This tells you which steering target matters most for your agent
+#### Calibrated Parameters from TASK-039
 
-**Output:**
-- `data/steering_experiment_v2.json` — full data for all 3 vectors
-- `data/steering_experiment_v2.png` — 4 CHI curves (unsteered + 3 vectors)
+| Vector | Layer | Alpha | Rationale |
+|--------|-------|-------|-----------|
+| task_focus | 16 | 0.5 | Best sweep result: CHI 0.953, +0.124 vs baseline, all responses alive |
+| tool_format | 16 | 0.5 | Start with same layer/alpha, adjust if needed |
+| code_coherence | 16 | 0.5 | Start with same layer/alpha, adjust if needed |
 
-**This is the real money graph.** The Week 6 graph was a proof of concept.
-This one needs to show actual improvement with actual responses.
+**Critical:** Use RAW vectors, NOT normalized. Normalized vectors showed
+zero differentiation across all configs in TASK-039 (identical CHI to 4
+decimal places — the perturbation is too small to affect the model).
 
-**Time:** 2-3 hours
-**Git:** `git commit -m "TASK-040: calibrated steering experiment — all 3 vectors"`
+---
+
+#### Why This Experiment Is Different from TASK-038
+
+TASK-038 problem: 5 turns, ~688 tokens max context. Degradation doesn't
+start until turn 10 (~2000-2500 tokens per Week 2 findings). We were
+measuring steering effect when the model didn't need help.
+
+This experiment MUST push past the degradation inflection point.
+
+---
+
+#### Experiment Protocol
+
+```
+Model:      mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+Turns:      10 (same EXPERIMENT_TURNS as TASK-038)
+max_tokens: 300 (up from 120 — need real responses, not truncated)
+Runs:       4 total (1 unsteered baseline + 3 vector types)
+```
+
+**EXPERIMENT_TURNS** (reuse from TASK-038):
+```python
+EXPERIMENT_TURNS = [
+    "Create a Calculator class with add and subtract methods",
+    "Add multiply and divide methods. Handle division by zero.",
+    "Write unit tests for all four operations",
+    "Add a history feature that stores the last 10 operations",
+    "Refactor to use a Strategy pattern for the operations",
+    "Add logging to track which operations are called most",
+    "Write a CLI wrapper so the calculator can be used from terminal",
+    "Add support for chaining operations like calc.add(1).multiply(3)",
+    "Write integration tests for the CLI",
+    "Add a square root method and update all tests",
+]
+```
+
+**For each run (unsteered + 3 vectors), record per turn:**
+1. `turn` — turn number (0-9)
+2. `chi_score` — smoothed CHI
+3. `chi_raw` — unsmoothed CHI (for debugging)
+4. `entropy`, `repetition`, `goal_drift` — raw signal values
+5. `response_length` — token count (CRITICAL: track this to rule out truncation confound)
+6. `context_length` — cumulative context tokens
+7. `response_preview` — first 100 chars of response (for qualitative review)
+
+---
+
+#### Thermal Management
+
+The M4 Pro heats up during long runs. Build in cooldown:
+
+```python
+import time
+
+COOLDOWN_BETWEEN_RUNS = 120  # 2 minutes between each full 10-turn run
+
+for vector_name in [None, "task_focus", "tool_format", "code_coherence"]:
+    run_experiment(vector_name, layer=16, alpha=0.5)
+    print(f"Cooldown {COOLDOWN_BETWEEN_RUNS}s...")
+    time.sleep(COOLDOWN_BETWEEN_RUNS)
+```
+
+Alternatively: run each condition as a separate invocation with a CLI arg:
+```bash
+python scripts/steering_experiment_v2.py --condition baseline
+python scripts/steering_experiment_v2.py --condition task_focus
+python scripts/steering_experiment_v2.py --condition tool_format
+python scripts/steering_experiment_v2.py --condition code_coherence
+python scripts/steering_experiment_v2.py --plot-only  # combine all into one graph
+```
+
+This lets you run one at a time and let the machine cool between runs.
+
+---
+
+#### Output Files
+
+- `data/steering_experiment_v2.json` — full data for all 4 conditions
+- `data/steering_experiment_v2.png` — THE MONEY GRAPH:
+  - 4 CHI curves (unsteered + 3 vectors) on one plot
+  - X-axis: turns 0-9
+  - Y-axis: CHI score (0.0-1.0)
+  - Horizontal line at 0.7 threshold (Level 2 trigger)
+  - Legend with mean CHI per condition
+  - Secondary info: response length per turn per condition (small subplot or annotation)
+
+---
+
+#### Success Criteria (ALL must pass)
+
+1. **Responses alive:** Steered responses are >20 tokens on ALL 10 turns for ALL 3 vectors.
+   If any vector kills output, note it and proceed with the vectors that work.
+
+2. **CHI improvement after turn 5:** Mean CHI for turns 5-9 is higher for
+   at least ONE steered condition vs unsteered. This is where degradation
+   should be visible in the unsteered run.
+
+3. **Length parity:** Mean response length for steered runs is within 50%
+   of unsteered mean. If steered = 50 tokens and unsteered = 300 tokens,
+   the CHI improvement is fake (just truncation). Flag this explicitly.
+
+4. **Qualitative check:** Manually review turns 7-9 for unsteered vs best
+   steered. Write 2-3 sentences in the session log about whether the
+   steered responses are actually more focused/coherent or just shorter.
+
+---
+
+#### If Steering Shows No Improvement at 10 Turns
+
+This is possible. The 5-turn sweep showed CHI was ~0.83 at baseline and
+~0.95 steered, but that was pre-degradation. If at 10 turns the unsteered
+run is still healthy (CHI > 0.7), then:
+
+- Extend to 15 turns to push further into degradation
+- OR reduce max_tokens to 200 to accumulate context faster
+- OR use a more challenging task sequence that causes faster drift
+
+Document what you find either way. Negative results are still results.
+
+---
+
+#### What This Tells Us for TASK-041
+
+The best-performing vector from this experiment becomes the DEFAULT for
+CHI-triggered steering in the agent loop. If task_focus wins, wire that
+in first. If code_coherence is stronger, use that instead. The data
+decides, not our assumptions.
+
+---
+
+**Time:** 2-3 hours (4 runs × ~15 min each + plotting + analysis)
+**Git:** `git commit -m "TASK-040: calibrated steering experiment — 10 turns, all 3 vectors, response length tracked"`
+
 
 ---
 
@@ -91,45 +222,174 @@ This is the core product integration. When CHI drops below 0.7, the
 agent activates steering automatically. When CHI recovers above 0.8,
 steering deactivates. This is Level 2 of the intervention ladder.
 
+---
+
+#### Changes from Original TASK-041 (Based on TASK-040 Results)
+
+| Original | Updated | Why |
+|----------|---------|-----|
+| Use `task_focus` vector | Use `tool_format` vector | task_focus kills output at turn 5. tool_format passed all 10 turns with length parity. |
+| Load vectors in the if-block | Load vectors ONCE at `__init__`, toggle `activate()`/`deactivate()` | Avoid repeated disk I/O and layer wrapping mid-session. |
+| Hardcoded thresholds | Configurable thresholds via constants | Need to tune activation/deactivation thresholds based on real agent runs. |
+
+---
+
+#### Implementation
+
 ```python
-# In CognitionAgent.__init__:
+# --- Constants (top of agent.py or in a config) ---
+
+STEERING_VECTOR = "tool_format"      # TASK-040 winner: all turns alive, +0.011 CHI
+STEERING_LAYER = 16                  # TASK-039 sweep: most stable layer
+STEERING_ALPHA = 0.5                 # TASK-039 sweep: safe zone
+STEERING_ACTIVATE_THRESHOLD = 0.7    # CHI below this → activate steering
+STEERING_DEACTIVATE_THRESHOLD = 0.8  # CHI above this → deactivate (0.1 hysteresis band)
+
+
+# --- In CognitionAgent.__init__ ---
+
 from cognition_engine.steering.injector import SteeringEngine
 
-self.steering = SteeringEngine(model)
+self.steering_enabled = enable_steering  # from --enable-steering CLI flag
 self.steering_active = False
 
-# In the agent loop, after CHI update:
-chi = monitor.get_smoothed_chi()
-intervention = monitor.get_intervention_level()
-
-if intervention >= 2 and not self.steering_active:
-    # CHI dropped — activate steering
-    self.steering.load_vectors("task_focus", layer_idx=BEST_LAYER, alpha=BEST_ALPHA)
-    self.steering.activate()
-    self.steering_active = True
-    print("[STEERING] Activated — CHI dropped below threshold")
-
-elif intervention < 2 and self.steering_active:
-    # CHI recovered — deactivate steering
+if self.steering_enabled:
+    self.steering = SteeringEngine(model)
+    # Load and wrap layer ONCE at init — vector stays in memory
+    self.steering.load_vectors(
+        STEERING_VECTOR,
+        layer_idx=STEERING_LAYER,
+        alpha=STEERING_ALPHA
+    )
+    # Start deactivated — only steer when CHI demands it
     self.steering.deactivate()
-    self.steering_active = False
-    print("[STEERING] Deactivated — CHI recovered")
+    print(f"[STEERING] Loaded {STEERING_VECTOR} at layer {STEERING_LAYER}, "
+          f"alpha={STEERING_ALPHA} (inactive until CHI < {STEERING_ACTIVATE_THRESHOLD})")
+
+
+# --- In the agent loop, AFTER CHI update each turn ---
+
+if self.steering_enabled:
+    chi = self.monitor.chi_history[-1]  # latest smoothed CHI
+
+    if chi < STEERING_ACTIVATE_THRESHOLD and not self.steering_active:
+        # CHI dropped — activate steering
+        self.steering.activate()
+        self.steering_active = True
+        print(f"[STEERING] ⚡ ACTIVATED at turn {turn} — CHI={chi:.3f}")
+
+    elif chi > STEERING_DEACTIVATE_THRESHOLD and self.steering_active:
+        # CHI recovered — deactivate steering
+        self.steering.deactivate()
+        self.steering_active = False
+        print(f"[STEERING] ✓ Deactivated at turn {turn} — CHI={chi:.3f}")
+
+
+# --- In the agent cleanup (finally block) ---
+
+if self.steering_enabled:
+    self.steering.cleanup()  # restore original layers
 ```
 
-**Key design decisions:**
-- Use **only task_focus** vector for now (simplest, most relevant to agent drift)
-- Load vectors once at agent init, toggle active/inactive based on CHI
-- Log every steering activation/deactivation with turn number and CHI value
-- Add `--enable-steering` flag to CLI so it's opt-in during testing
+---
 
-**Manual test:**
-Run `scripts/test_agent.py` with steering enabled. Observe:
-- Does steering activate when expected (CHI < 0.7)?
-- Does output quality visibly change when steering kicks in?
-- Does the agent still follow the tool protocol while steered?
+#### CLI Integration
+
+Add `--enable-steering` flag to the `agent` subcommand in `cli.py`:
+
+```python
+agent_parser.add_argument(
+    "--enable-steering", action="store_true",
+    help="Enable CHI-triggered activation steering (Level 2 intervention)"
+)
+```
+
+Pass it through to `CognitionAgent.__init__`:
+
+```python
+agent = CognitionAgent(
+    model, tokenizer, task=args.task,
+    working_dir=args.dir,
+    enable_steering=args.enable_steering,
+    # ... other args
+)
+```
+
+---
+
+#### What to Log Each Turn (Steering Status Line)
+
+Extend the existing CHI status line to include steering state:
+
+```
+Turn  7 | CHI=0.683 [E:0.04 R:0.89 D:0.23] | STEERING: ON (alpha=0.5) | Tools: write
+Turn  8 | CHI=0.742 [E:0.03 R:0.45 D:0.21] | STEERING: ON (alpha=0.5) | Tools: exec
+Turn  9 | CHI=0.812 [E:0.05 R:0.12 D:0.19] | STEERING: OFF            | Tools: think
+```
+
+---
+
+#### Manual Test
+
+Run `scripts/test_agent.py` with steering enabled:
+
+```bash
+caffeinate -dimsu .venv/bin/python3 -u scripts/test_agent.py --enable-steering
+```
+
+**Observe and record in session log:**
+1. Which turn does steering first activate? (Expected: around turn 7-10
+   based on TASK-040 baseline degradation pattern)
+2. Does output stay alive (>20 tokens) when steering is active?
+   (tool_format kept all turns alive in TASK-040 — should hold here too)
+3. Does the agent still follow [READ]/[WRITE]/[EXEC] protocol while steered?
+   (tool_format vector was trained on format compliance — should help, not hurt)
+4. Does CHI recover after steering activates, even partially?
+5. Does the agent complete the task? (Files created, tests pass?)
+
+---
+
+#### Edge Cases to Handle
+
+1. **Steering vectors not found on disk:**
+   If `data/steering_vectors/tool_format.npz` doesn't exist, print a
+   warning and continue without steering. Don't crash the agent.
+
+   ```python
+   if self.steering_enabled:
+       try:
+           self.steering = SteeringEngine(model)
+           self.steering.load_vectors(STEERING_VECTOR, ...)
+           self.steering.deactivate()
+       except FileNotFoundError:
+           print("[STEERING] Warning: vectors not found, steering disabled")
+           self.steering_enabled = False
+   ```
+
+2. **Steering + compaction interaction:**
+   If context compaction triggers (Level 3, CHI < 0.5), steering should
+   stay active — compaction and steering work together. Don't deactivate
+   steering when compaction fires. The intervention ladder is additive:
+   Level 2 (steering) stays on when Level 3 (compaction) activates.
+
+3. **Session save/resume:**
+   Save `steering_active` state in `SessionManager` so a resumed session
+   knows whether steering was active when interrupted.
+
+---
+
+#### What NOT to Do This Task
+
+- Don't implement adaptive alpha yet (that's TASK-042)
+- Don't add multi-vector steering yet (that's TASK-043)
+- Don't tune the thresholds yet — use 0.7/0.8 as defaults and collect data
+- Don't run code_coherence as a secondary vector — keep it single-vector
+
+---
 
 **Time:** 2-3 hours
-**Git:** `git commit -m "TASK-041: CHI-triggered steering in agent loop"`
+**Git:** `git commit -m "TASK-041: CHI-triggered steering in agent loop (tool_format, layer 16, alpha 0.5)"`
+
 
 ---
 

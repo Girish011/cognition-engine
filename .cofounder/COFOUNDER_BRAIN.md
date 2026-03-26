@@ -201,3 +201,16 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
     Try alpha 0.25 to stabilize. Highest potential if over-steering is fixed.
   - Baseline degrades 0.87→0.71 (turns 6-9) via repetition collapse.
     tool_format resists this collapse. code_coherence resists it longer.
+- TASK-041 COMPLETE. CHI-triggered steering wired into agent loop.
+  tool_format at layer 16, alpha 0.5. Activation at CHI<0.7, deactivation at CHI>0.8.
+  Session save/resume preserves steering state.
+- FINDING: Steering alone (Level 2) does NOT reverse degradation in agent loop.
+  CHI continues to decline (0.67→0.53) even with steering active.
+  Cause 1: alpha 0.5 too weak to overcome compounding degenerate context.
+  Cause 2: model enters [THINK] loop — never uses tools — steering can't fix this.
+- IMPLICATION: Level 3 (compaction) must fire when steering fails.
+  Current compaction threshold (CHI<0.5) should trigger but didn't in tests.
+  Check: is compaction wired to actually fire in agent.py? If not, that's TASK-044.
+- Run 1 (test_agent.py) worked well: CHI recovered 0.698→0.811, files created,
+  tests run. The existing prompt + tool protocol from TASK-027 matters more than
+  steering for basic task completion.
