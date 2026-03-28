@@ -202,6 +202,20 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   2. code_coherence: strongest CHI (+0.020) but dies turn 9
   3. dual_vector: no benefit over single
   4. task_focus: dead, do not use
+- TASK-044 COMPLETE. End-to-end integration test: 3 modes compared.
+  All three created files + ran pytest. None reached [DONE].
+  Steering and full_ladder produced IDENTICAL results (compaction never triggered).
+- CRITICAL FINDING: Steering prevents compaction from firing.
+  Adaptive alpha keeps CHI at ~0.60, above the 0.50 compaction threshold.
+  Level 2 blocks Level 3. Fix: lower compaction threshold to 0.65, or add
+  time-based escalation ("steering active 5+ turns without recovery → compact").
+- CRITICAL FINDING: The model completes the coding task by turn 6-8 but
+  never emits [DONE]. Remaining turns are wasted. This is a prompt/detection
+  issue, not an intervention issue. Week 8 priority: better completion detection.
+- Week 7 overall: Steering pipeline works mechanically. Adaptive alpha works.
+  Multi-vector doesn't help. The intervention ladder's value is in CHI monitoring
+  + compaction, not in steering alone. Steering provides marginal CHI improvement
+  (+0.01-0.02) but doesn't change task outcomes on a 7B model.
 
 ## KEY LEARNINGS (condensed)
 
@@ -248,3 +262,11 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   not recovering from deep failure. Level 3 (compaction) is the recovery mechanism.
 - CHI calibration issue: shorter/emptier responses inflate CHI artificially.
   CHI "recovery" from 0.540→0.632 was model producing less, not producing better.
+- TASK-044 (Week 7 capstone harness): `scripts/test_steering_agent.py` compares three
+  modes on the calculator task — `baseline` (no steering, no compaction),
+  `steering` (Level 2 + adaptive alpha, no compaction), `full_ladder` (steering +
+  Level 3 compaction + Level 4 log-only line). Per-turn JSON logs go to
+  `data/task044_{mode}.json`; after all three runs, use `--plot-only` or
+  `--plot-comparison` to build `data/task044_comparison.png` and
+  `data/task044_report.md`. **Outcome:** run the three commands and record results
+  in the report — the harness is the deliverable; measured success is model-dependent.

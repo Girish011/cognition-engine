@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from mlx_lm import generate
 
@@ -51,6 +51,8 @@ class CognitionAgent:
         auto_approve: bool = False,
         *,
         enable_steering: bool = False,
+        enable_compaction: bool = True,
+        turn_log: Optional[List[Dict]] = None,
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -58,6 +60,8 @@ class CognitionAgent:
         self.working_dir = working_dir
         self.auto_approve = auto_approve
         self.enable_steering = bool(enable_steering)
+        self.enable_compaction = bool(enable_compaction)
+        self.turn_log = turn_log
 
         # Core systems
         self.memory = WorkingMemory(working_dir)
@@ -188,6 +192,15 @@ class CognitionAgent:
                         self.turn_count += 1
                         continue
                     self.compactor.add_turn("assistant", response)
+                    if self.turn_log is not None:
+                        self._append_turn_log(
+                            response=response,
+                            chi_result=None,
+                            level=self.chi_monitor.get_intervention_level(),
+                            tool_calls=[{"tool": "done"}],
+                            compaction_fired=False,
+                            compaction_strategy=None,
+                        )
                     status = "completed"
                     completed_explicitly = True
                     print("\n Agent reports task complete. ([DONE])")
@@ -243,23 +256,47 @@ class CognitionAgent:
 
                 self._print_status(chi, level, tool_calls)
 
-                # 7. Check compaction
-                if chi < 0.5 and self.compactor.needs_compaction(chi):
-                    print(
-                        f"[COMPACTION] Level 3 triggered at turn {self.turn_count} — "
-                        f"CHI={chi:.3f}"
-                    )
-                    self.compactor.compact("auto")
-                elif self.compactor.needs_compaction(chi):
+                # 7. Compaction (Level 3) — optional for TASK-044 A/B comparisons
+                c_before = self.compactor.compaction_count
+                if self.enable_compaction:
+                    if chi < 0.5 and self.compactor.needs_compaction(chi):
+                        print(
+                            f"[COMPACTION] Level 3 triggered at turn {self.turn_count} — "
+                            f"CHI={chi:.3f}"
+                        )
+                        self.compactor.compact("auto")
+                    elif self.compactor.needs_compaction(chi):
+                        if chi < 0.3:
+                            self.compactor.compact("anchor_reset")
+                            print("  [COMPACTION: anchor reset]")
+                        elif chi < 0.5:
+                            self.compactor.compact("summarize")
+                            print("  [COMPACTION: summarize]")
+                        else:
+                            self.compactor.compact("trim")
+                            print("  [COMPACTION: trim]")
                     if chi < 0.3:
-                        self.compactor.compact("anchor_reset")
-                        print("  [COMPACTION: anchor reset]")
-                    elif chi < 0.5:
-                        self.compactor.compact("summarize")
-                        print("  [COMPACTION: summarize]")
-                    else:
-                        self.compactor.compact("trim")
-                        print("  [COMPACTION: trim]")
+                        print(
+                            "[LEVEL 4] Cloud escalation threshold (CHI < 0.3) — "
+                            "would escalate (not implemented)"
+                        )
+
+                compaction_fired = self.compactor.compaction_count > c_before
+                strat = (
+                    self.compactor.last_compaction_strategy
+                    if compaction_fired
+                    else None
+                )
+
+                if self.turn_log is not None:
+                    self._append_turn_log(
+                        response=response,
+                        chi_result=chi_result,
+                        level=level,
+                        tool_calls=tool_calls,
+                        compaction_fired=compaction_fired,
+                        compaction_strategy=strat,
+                    )
 
                 self.turn_count += 1
         except KeyboardInterrupt:
@@ -311,6 +348,55 @@ class CognitionAgent:
             )
 
             self._print_summary()
+
+    def _append_turn_log(
+        self,
+        *,
+        response: str,
+        chi_result: Optional[Dict],
+        level: int,
+        tool_calls: List[Dict],
+        compaction_fired: bool,
+        compaction_strategy: Optional[str],
+    ) -> None:
+        """Append one TASK-044-style turn record (requires turn_log list in __init__)."""
+        if self.turn_log is None:
+            return
+        if chi_result is not None:
+            chi_score = float(chi_result["chi_score"])
+            chi_raw = float(chi_result.get("chi_raw", chi_score))
+        elif self.chi_monitor.chi_history:
+            chi_score = float(self.chi_monitor.chi_history[-1])
+            chi_raw = chi_score
+        else:
+            chi_score = 0.0
+            chi_raw = 0.0
+
+        tool_used = tool_calls[0].get("tool", "none") if tool_calls else "none"
+        resp_tokens = len(self.tokenizer.encode(response))
+        ctx_tokens = self.compactor.get_context_tokens()
+
+        self.turn_log.append(
+            {
+                "turn": self.turn_count,
+                "chi_score": chi_score,
+                "chi_raw": chi_raw,
+                "intervention_level": level,
+                "steering_active": bool(self.steering_active)
+                if self.enable_steering
+                else False,
+                "steering_alpha": float(self.steering_alpha_current)
+                if self.enable_steering
+                else 0.0,
+                "compaction_fired": compaction_fired,
+                "compaction_strategy": compaction_strategy,
+                "tool_used": tool_used,
+                "response_length": resp_tokens,
+                "context_length": ctx_tokens,
+                "files_modified": list(self.anchor_mgr.files_modified),
+                "response_preview": response[:100],
+            }
+        )
 
     # ------------------------------------------------------------------
     # Tool parsing and dispatch

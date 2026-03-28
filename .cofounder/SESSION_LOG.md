@@ -635,3 +635,15 @@ A major limitation of traditional activation steering is that it is "always on".
   - **Alive-turn failure:** turn 8 response length = `4` tokens, so `responses_alive_gt_20_all_turns = false` for dual-vector.
   - Dual still beats baseline on mean CHI turns 5-9 (`0.813997` vs `0.798707`) and keeps length parity within 50%, but reliability is worse than `tool_format`-only.
 - Decision for now: keep single-vector default (`tool_format`) for integration work; revisit multi-vector only after full ladder testing (TASK-044+) or lower-alpha retune.
+
+## 2026-03-28 (Week 7 — TASK-044: Full intervention ladder integration harness)
+
+- Added `scripts/test_steering_agent.py` (TASK-044): three modes on the calculator task — `baseline` (no steering, no compaction), `steering` (Level 2 + adaptive alpha, compaction off), `full_ladder` (steering + compaction + Level 4 log line when CHI < 0.3).
+- Extended `CognitionAgent`: `enable_compaction` (default True for CLI), optional `turn_log` list for per-turn TASK-044 JSON rows; compaction block skipped when compaction disabled.
+- Extended `ContextCompactor.last_compaction_strategy` set whenever `compact()` increments `compaction_count`.
+- Outputs: `data/task044_{mode}.json`; `--plot-comparison` or `--plot-only` builds `data/task044_comparison.png` and `data/task044_report.md`.
+- Example runs (use `--auto-approve` for unattended pytest):
+  - `caffeinate -dimsu .venv/bin/python3 -u scripts/test_steering_agent.py --mode baseline --dir /tmp/task044_baseline --max-turns 20 --auto-approve`
+  - same with `--mode steering --dir /tmp/task044_steering`
+  - same with `--mode full_ladder --dir /tmp/task044_full`
+- `python3 -m py_compile` passed on `agent.py`, `compaction.py`, `test_steering_agent.py`.

@@ -31,6 +31,8 @@ class ContextCompactor:
         self.conversation_turns: List[Dict[str, str]] = []
         self.compaction_count = 0
         self.anchor_text = ""  # Original task description, always kept
+        # Set when a compaction actually increments compaction_count (for TASK-044 logging).
+        self.last_compaction_strategy: Optional[str] = None
 
     # ---------------------------------------------------------------------
     # Public API
@@ -67,6 +69,7 @@ class ContextCompactor:
         - "anchor_reset": Nuclear option — keep only anchor + last 2 turns
         - "auto": Choose strategy based on current context length
         """
+        self.last_compaction_strategy = None
         if not self.conversation_turns and not self.anchor_text:
             return ""
 
@@ -80,15 +83,18 @@ class ContextCompactor:
             context = self._trim()
             if self.get_context_tokens() <= self.max_context_tokens:
                 self.compaction_count += 1
+                self.last_compaction_strategy = "auto"
                 return context
 
             context = self._summarize()
             if self.get_context_tokens() <= self.max_context_tokens:
                 self.compaction_count += 1
+                self.last_compaction_strategy = "auto"
                 return context
 
             context = self._anchor_reset()
             self.compaction_count += 1
+            self.last_compaction_strategy = "auto"
             return context
 
         if strategy == "trim":
@@ -102,6 +108,7 @@ class ContextCompactor:
             context = self._trim()
 
         self.compaction_count += 1
+        self.last_compaction_strategy = strategy
         return context
 
     # ---------------------------------------------------------------------
