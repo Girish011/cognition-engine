@@ -561,40 +561,107 @@ together should produce the recovery that neither achieves alone.
 
 ---
 
-### TASK-043: Multi-Vector Steering (Different Vectors at Different Layers)
+### TASK-043: Multi-Vector Steering (Reduced Scope)
 **Status:** ⬜ TODO
-**Do:** Extend `SteeringEngine` to support multiple simultaneous vectors
+**Do:** Test dual-vector steering with the two vectors that work
 
-Right now: one vector, one layer. But you have 3 vector types that
-fix different problems. The field guide recommends injecting different
-vectors at DIFFERENT layers to avoid interference.
+---
 
-**Implementation:**
+#### Why Reduced Scope
+
+TASK-040 results:
+- task_focus: **DEAD.** Kills output at turn 5. Do not use.
+- tool_format: Passed all 10 turns. Reliable.
+- code_coherence: Strong CHI improvement, died on turn 9.
+
+Only two vectors survived TASK-040. Multi-vector means two vectors, not
+three. And TASK-041/042 showed that steering alone can't recover a
+degenerate model — the urgent need is the full intervention ladder
+(TASK-044), not adding more vectors.
+
+**Treat this as a quick experiment, not a deep engineering task.**
+
+---
+
+#### Safe Parameters (From Actual Data)
+
 ```python
-# SteeringEngine already supports this — just call load_vectors multiple times
-engine = SteeringEngine(model)
-engine.load_vectors("task_focus", layer_idx=17, alpha=0.8)
-engine.load_vectors("tool_format", layer_idx=20, alpha=0.5)
-engine.load_vectors("code_coherence", layer_idx=14, alpha=0.6)
+# WRONG — from original task (will kill output):
+engine.load_vectors("task_focus", layer_idx=17, alpha=0.8)    # dead vector, lethal alpha
+engine.load_vectors("tool_format", layer_idx=20, alpha=0.5)   # layer 20 untested for tool_format
+engine.load_vectors("code_coherence", layer_idx=14, alpha=0.6) # alpha too high
+
+# RIGHT — based on TASK-039/040 results:
+engine.load_vectors("tool_format", layer_idx=16, alpha=0.3)
+engine.load_vectors("code_coherence", layer_idx=17, alpha=0.25)
 ```
 
-Verify that `_wrap_layer` correctly handles multiple layers by checking
-that `self.active_wrappers` and `self.originals` track all three.
+**Why these values:**
+- tool_format at layer 16: proven safe in TASK-040 at alpha 0.5.
+  Reduce to 0.3 because a second vector adds cumulative perturbation.
+- code_coherence at layer 17: different layer to avoid interference.
+  Alpha 0.25 because code_coherence died at turn 9 with alpha 0.5 —
+  halving should keep it alive.
+- Total perturbation budget: ~0.55 combined, staying well under the
+  single-vector ceiling of 0.5 that was stable.
 
-**Test:** Run a generation with all 3 vectors active. Compare to:
-- No steering
-- task_focus only
-- All three vectors
+---
 
-**Check for interference:** Does adding more vectors degrade output
-quality vs single vector? If yes, the vectors are interfering and
-you need to adjust layers/alphas.
+#### Test Protocol (Quick — 1 Hour Max)
 
-**Document which combination works best** — this becomes the default
-"full steering" configuration for the agent.
+Run a single 10-turn experiment comparing 3 conditions.
+Reuse the TASK-040 experiment framework:
 
-**Time:** 2-3 hours
-**Git:** `git commit -m "TASK-043: multi-vector steering at different layers"`
+```bash
+# Condition 1: tool_format only (already have this data from TASK-040)
+# Condition 2: code_coherence only (already have this data from TASK-040)
+# Condition 3: both vectors simultaneously (NEW)
+python scripts/steering_experiment_v2.py --condition dual_vector
+```
+
+**For condition 3, measure:**
+1. Are all 10 turns alive (>20 tokens)?
+2. Mean CHI turns 5-9 vs baseline vs single-vector runs
+3. Response length parity with baseline
+4. Does dual-vector beat the best single-vector (code_coherence)?
+
+---
+
+#### Possible Outcomes and Decisions
+
+**Outcome A — Dual beats single:** Use dual-vector as default config.
+Update TASK-041 constants to load both vectors.
+
+**Outcome B — Dual matches single:** No benefit. Stick with tool_format
+only (simpler, fewer moving parts).
+
+**Outcome C — Dual degrades vs single:** Vectors interfere. Stick with
+single vector. Multi-vector needs different layers or lower alphas.
+
+**Outcome D — Dual kills output:** Combined perturbation is too strong.
+Reduce both alphas further or abandon multi-vector for this model size.
+
+---
+
+#### If You're Short on Time — Skip to TASK-044
+
+The findings from TASK-041 and TASK-042 make it clear that the
+bottleneck is not "steering isn't strong enough" — it's "the full
+intervention ladder doesn't fire." TASK-044 tests the complete system:
+CHI monitoring → steering activation → compaction → recovery.
+
+That matters more than a second steering vector.
+
+Mark TASK-043 as DEFERRED and move to TASK-044 with a note:
+"Multi-vector deferred — single-vector tool_format is sufficient for
+integration testing. Revisit Week 8 if single-vector results are
+insufficient in production agent runs."
+
+---
+
+**Time:** 1-2 hours (reduced from 2-3 — quick A/B test, not deep engineering)
+**Git:** `git commit -m "TASK-043: dual-vector steering test (tool_format + code_coherence)"`
+
 
 ---
 

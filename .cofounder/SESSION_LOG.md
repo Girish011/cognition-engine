@@ -607,3 +607,31 @@ A major limitation of traditional activation steering is that it is "always on".
   - when `chi < 0.5` and `needs_compaction(chi)` is true, logs
     `[COMPACTION] Level 3 triggered ...` and runs `compact("auto")`.
 - Quick sanity check for adaptive alpha mapping (base=0.5): `CHI 0.8 -> 0.0`, `0.7 -> 0.39`, `0.5 -> 0.57`, `0.3 -> 0.75`, `0.2 -> 0.75`.
+
+## 2026-03-27 (Week 7 — TASK-043: Dual-vector steering, reduced scope)
+
+- Implemented reduced-scope TASK-043 wiring in `scripts/steering_experiment_v2.py`:
+  - Added new condition: `dual_vector`.
+  - `dual_vector` now loads two steering engines simultaneously with safe params from revised task:
+    - `tool_format` @ layer 16, alpha 0.3
+    - `code_coherence` @ layer 17, alpha 0.25
+  - Both engines are activated/deactivated each turn around generation, then cleaned up safely.
+- Updated experiment reporting:
+  - Added `dual_vector_vs_single` block in summary with:
+    - best single-vector mean CHI (turns 5-9),
+    - dual-vector mean CHI (turns 5-9),
+    - boolean flag for whether dual beats best single.
+  - Added `dual_vector` plot color so CHI/length charts include the new arm.
+- Validation:
+  - Syntax/compile check passed: `python3 -m py_compile scripts/steering_experiment_v2.py`.
+- Run command for the actual TASK-043 measurement:
+  - `python scripts/steering_experiment_v2.py --condition dual_vector`
+  - Compare output JSON summary against existing `tool_format` and `code_coherence` single-vector runs.
+- Actual dual-vector run completed (10 turns) and saved:
+  - `data/steering_experiment_v2.json`
+  - `data/steering_experiment_v2.png`
+- Key outcomes from this run:
+  - **Outcome C (degrades vs best single):** dual-vector mean CHI turns 5-9 = `0.813997` vs best single (`code_coherence`) = `0.818518` -> dual does **not** beat best single.
+  - **Alive-turn failure:** turn 8 response length = `4` tokens, so `responses_alive_gt_20_all_turns = false` for dual-vector.
+  - Dual still beats baseline on mean CHI turns 5-9 (`0.813997` vs `0.798707`) and keeps length parity within 50%, but reliability is worse than `tool_format`-only.
+- Decision for now: keep single-vector default (`tool_format`) for integration work; revisit multi-vector only after full ladder testing (TASK-044+) or lower-alpha retune.

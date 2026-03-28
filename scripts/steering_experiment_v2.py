@@ -6,6 +6,7 @@ Conditions:
 - task_focus (layer 16, alpha 0.5)
 - tool_format (layer 16, alpha 0.5)
 - code_coherence (layer 16, alpha 0.5)
+- dual_vector (tool_format@16 alpha 0.3 + code_coherence@17 alpha 0.25)
 
 Key requirements:
 - 10 turns (same sequence as TASK-038)
@@ -41,7 +42,11 @@ EXPERIMENT_TURNS = [
     "Add a square root method and update all tests",
 ]
 
-CONDITIONS = ["baseline", "task_focus", "tool_format", "code_coherence"]
+CONDITIONS = ["baseline", "task_focus", "tool_format", "code_coherence", "dual_vector"]
+DUAL_VECTOR_CONFIG = {
+    "tool_format": {"layer": 16, "alpha": 0.3},
+    "code_coherence": {"layer": 17, "alpha": 0.25},
+}
 
 
 def _abs_path(root: Path, path_str: str) -> Path:
@@ -54,7 +59,7 @@ def run_condition(
     tokenizer: Any,
     *,
     condition: str,
-    steering_engine: Any | None,
+    steering_engines: list[Any] | None,
     max_tokens: int,
     context_limit: int,
 ) -> list[dict]:
@@ -69,13 +74,15 @@ def run_condition(
         print(f"[{condition}] Generating turn {i}...", flush=True)
         conversation += f"\nUser: {user_msg}\nAssistant: "
 
-        if steering_engine is not None:
-            steering_engine.activate()
+        if steering_engines:
+            for engine in steering_engines:
+                engine.activate()
 
         response = generate(model, tokenizer, prompt=conversation, max_tokens=max_tokens)
 
-        if steering_engine is not None:
-            steering_engine.deactivate()
+        if steering_engines:
+            for engine in reversed(steering_engines):
+                engine.deactivate()
 
         full_text = conversation + response
         chi_out = monitor.update(current_response=response, full_context=full_text)
@@ -164,6 +171,21 @@ def summarize_conditions(payload: dict) -> dict:
             "better_than_baseline_after_turn_5": better_after_5,
         }
 
+    best_single_after_5 = None
+    single_vector_conditions = [
+        n for n in ("task_focus", "tool_format", "code_coherence")
+        if per_condition.get(n, {}).get("mean_chi_turns_5_to_9") is not None
+    ]
+    if single_vector_conditions:
+        best_single_after_5 = max(
+            per_condition[n]["mean_chi_turns_5_to_9"] for n in single_vector_conditions
+        )
+
+    dual_after_5 = per_condition.get("dual_vector", {}).get("mean_chi_turns_5_to_9")
+    dual_beats_best_single = None
+    if dual_after_5 is not None and best_single_after_5 is not None:
+        dual_beats_best_single = dual_after_5 > best_single_after_5
+
     return {
         "chi_threshold": CHI_THRESHOLD,
         "baseline": {
@@ -171,6 +193,11 @@ def summarize_conditions(payload: dict) -> dict:
             "mean_response_length": baseline_mean_len,
         },
         "per_condition": per_condition,
+        "dual_vector_vs_single": {
+            "best_single_vector_mean_chi_turns_5_to_9": best_single_after_5,
+            "dual_vector_mean_chi_turns_5_to_9": dual_after_5,
+            "dual_beats_best_single_vector": dual_beats_best_single,
+        },
         "success_criteria": {
             "responses_alive_all_3_vectors": all_vectors_alive,
             "at_least_one_vector_improves_mean_chi_after_turn_5": at_least_one_better_after_5,
@@ -195,6 +222,7 @@ def plot_payload(payload: dict, output_png: Path) -> None:
         "task_focus": "tab:blue",
         "tool_format": "tab:green",
         "code_coherence": "tab:red",
+        "dual_vector": "tab:purple",
     }
 
     for name in CONDITIONS:
@@ -322,28 +350,48 @@ def main() -> None:
                 model,
                 tokenizer,
                 condition=cond,
-                steering_engine=None,
+                steering_engines=None,
                 max_tokens=args.max_tokens,
                 context_limit=args.context_limit,
             )
         else:
-            engine = SteeringEngine(model)
+            engines: list[Any] = []
             try:
-                print(
-                    f"[{cond}] Steering config: layer={args.layer}, alpha={args.alpha}, vectors=raw",
-                    flush=True,
-                )
-                engine.load_vectors(cond, layer_idx=args.layer, alpha=args.alpha, normalize=False)
+                if cond == "dual_vector":
+                    print(f"[{cond}] Steering config: vectors=raw, dual-vector safe params", flush=True)
+                    for vector_name, cfg in DUAL_VECTOR_CONFIG.items():
+                        engine = SteeringEngine(model)
+                        engines.append(engine)
+                        print(
+                            f"[{cond}] Loading {vector_name}: layer={cfg['layer']}, alpha={cfg['alpha']}",
+                            flush=True,
+                        )
+                        engine.load_vectors(
+                            vector_name,
+                            layer_idx=cfg["layer"],
+                            alpha=cfg["alpha"],
+                            normalize=False,
+                        )
+                else:
+                    engine = SteeringEngine(model)
+                    engines.append(engine)
+                    print(
+                        f"[{cond}] Steering config: layer={args.layer}, alpha={args.alpha}, vectors=raw",
+                        flush=True,
+                    )
+                    engine.load_vectors(cond, layer_idx=args.layer, alpha=args.alpha, normalize=False)
+
                 rows = run_condition(
                     model,
                     tokenizer,
                     condition=cond,
-                    steering_engine=engine,
+                    steering_engines=engines,
                     max_tokens=args.max_tokens,
                     context_limit=args.context_limit,
                 )
             finally:
-                engine.cleanup()
+                for engine in reversed(engines):
+                    engine.cleanup()
 
         payload["conditions"][cond] = rows
         payload["summary"] = summarize_conditions(payload)

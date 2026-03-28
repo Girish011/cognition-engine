@@ -176,6 +176,32 @@ to well-funded teams who can replicate in 2-4 weeks.
 about hidden state extraction patterns. Share CaptureLayer approach
 (not moat). Goal: become known to MLX team as "the person building
 cognitive monitoring on MLX." No mention of acquisition/selling.
+- WEEK 6: Activation steering foundations (TASKS 033-038) — COMPLETE
+  Pipeline working: pairs → extraction → vectors → injection → measurement.
+  Proved steering changes behavior. Over-steering at layer 27/alpha 2.0
+  kills output. Middle layers + moderate alpha are the sweet spot.
+- WEEK 7: Steering calibration + agent integration (TASKS 039-044)
+  Alpha/layer sweep, adaptive alpha, CHI-triggered steering in agent loop.
+  Multi-vector steering. End-to-end integration test.
+- 2026-03-28: Apple-Google Gemini distillation deal confirmed. Apple has full 
+  Gemini access in own data centers, can distill on-device models, has access 
+  to chain-of-thought reasoning traces. WWDC June 8 = new Siri reveal.
+  Impact on us: validates on-device AI thesis strongly. Distilled models still 
+  degrade at runtime — CHI + steering remains the unsolved layer. New angle: 
+  position as "reliability infrastructure for any on-device model" including 
+  Apple's distilled Gemini variants. Time Phase 3 launch for post-WWDC window 
+  (late June/July) when on-device limitations become visible.
+  No strategy reversal needed. Stay the course on Phase 2 steering.
+- TASK-043 COMPLETE. Dual-vector (tool_format L16/α0.3 + code_coherence L17/α0.25)
+  scored 0.814 mean CHI turns 5-9 — worse than code_coherence alone (0.819),
+  died at turn 8. Vectors don't complement; they dilute.
+- DECISION: Single-vector tool_format (L16, α0.5) remains the default.
+  Only reliable vector across all 10 turns with full response length.
+- Final steering vector ranking:
+  1. tool_format: reliable, all turns alive, +0.011 CHI
+  2. code_coherence: strongest CHI (+0.020) but dies turn 9
+  3. dual_vector: no benefit over single
+  4. task_focus: dead, do not use
 
 ## KEY LEARNINGS (condensed)
 
