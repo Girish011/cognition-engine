@@ -41,7 +41,7 @@ already passed. Say [DONE] and stop.
 
 IMPORTANT: Installing a package (pip install) is NOT the same as running
 tests. After installing pytest, you MUST run the tests again. Only say
-[DONE] after the test command itself (pytest, python -m pytest, etc.)
+[DONE] after the test command itself (prefer `python -m pytest` so the venv Python runs tests)
 returns exit code 0 with passing results.
 
 Examples (follow these patterns exactly, with a single tool call per response):
@@ -57,9 +57,9 @@ class Calculator:
         return a + b
 ```
 
-[EXEC] pytest
+[EXEC] python -m pytest
 
-(After pytest reports exit 0 and all requested files exist, stop tooling.)
+(After tests report exit 0 and all requested files exist, stop tooling.)
 
 [DONE]
 """

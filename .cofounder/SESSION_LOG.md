@@ -677,3 +677,9 @@ A major limitation of traditional activation steering is that it is "always on".
 - **`cognition_engine/agent.py`:** `self._consecutive_no_tool` initialized to 0; after `_parse_tool_calls`, increment if no tools else reset; when count reaches ≥ 3, log `[NO-TOOL-GUARD]`, inject system message requiring `[WRITE]`, `[READ]`, `[EXEC]`, or `[DONE]`, then reset counter (covers degenerate empty / special-token loops with `tool_used: none`).
 - Manual verify: `python scripts/test_steering_agent.py --mode baseline --dir /tmp/task045_v3 --max-turns 20 --auto-approve`
 - Git: `TASK-045F: pre-install pytest + no-tool-output guard`
+
+## 2026-03-29 (Week 8 — TASK-045G: pytest PATH / `python -m pytest`)
+
+- **`cognition_engine/prompts.py`:** few-shot example now uses `[EXEC] python -m pytest`; COMPLETION hint prefers `python -m pytest` for venv correctness.
+- **`cognition_engine/agent.py`:** `_tool_execute` normalizes bare `pytest`, `pytest .`, and commands starting with `pytest ` to `sys.executable -m pytest` before approval/subprocess; output messages use the resolved command.
+- Git: `TASK-045G: fix pytest PATH — use python -m pytest`

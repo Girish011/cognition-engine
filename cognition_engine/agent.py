@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from typing import List, Dict, Optional, Tuple, Any
 
 from mlx_lm import generate
@@ -622,13 +623,21 @@ class CognitionAgent:
 
     def _tool_execute(self, command: str) -> Tuple[str, Optional[int]]:
         """Execute a shell command with user approval. Returns (message, exit_code)."""
+        # TASK-045G: bare `pytest` may not be on PATH in the subprocess; use venv python.
+        cmd = command
+        stripped = cmd.strip()
+        if stripped in ("pytest", "pytest ."):
+            cmd = f"{sys.executable} -m pytest"
+        elif stripped.startswith("pytest "):
+            cmd = cmd.replace("pytest", f"{sys.executable} -m pytest", 1)
+
         if not self.auto_approve:
-            approval = input(f"  Execute: `{command}`? [y/N] ")
+            approval = input(f"  Execute: `{cmd}`? [y/N] ")
             if approval.lower() != "y":
                 return "[EXEC cancelled by user]", None
         try:
             result = subprocess.run(
-                command,
+                cmd,
                 shell=True,
                 capture_output=True,
                 text=True,
@@ -639,9 +648,9 @@ class CognitionAgent:
             if result.returncode != 0:
                 output += f"\n[STDERR: {result.stderr[:500]}]"
             code = result.returncode
-            return f"[EXEC `{command}` → exit {code}]\n{output}", code
+            return f"[EXEC `{cmd}` → exit {code}]\n{output}", code
         except subprocess.TimeoutExpired:
-            return f"[EXEC `{command}` → TIMEOUT (30s)]", None
+            return f"[EXEC `{cmd}` → TIMEOUT (30s)]", None
         except Exception as e:  # noqa: BLE001
             return f"[EXEC ERROR: {e}]", None
 

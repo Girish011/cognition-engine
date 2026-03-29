@@ -97,6 +97,12 @@ Verify the agent completes in <10 turns instead of running to max_turns.
 
 **Git:** `git commit -m "TASK-045F: pre-install pytest + no-tool-output guard"`
 
+### TASK-045G: Pytest via `python -m pytest` (PATH)
+**Status:** ✅ DONE
+**Do:** Few-shot uses `[EXEC] python -m pytest`; `_tool_execute` rewrites bare `pytest` / `pytest .` / `pytest …` to `sys.executable -m pytest`.
+
+**Git:** `git commit -m "TASK-045G: fix pytest PATH — use python -m pytest"`
+
 ---
 
 ### TASK-046: Fix Compaction Threshold + Time-Based Escalation
