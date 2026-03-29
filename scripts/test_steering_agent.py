@@ -110,6 +110,8 @@ def compute_metrics(
     # Heuristic completion: files exist + successful test execution (even if model never emits [DONE]).
     heuristic_completed = False
     turns_to_completion = None
+
+    # Preferred: use per-turn execute metadata when present.
     if has_calc and has_test:
         for row in turns:
             if row.get("tool_used") != "execute":
@@ -120,6 +122,30 @@ def compute_metrics(
                 heuristic_completed = True
                 turns_to_completion = int(row["turn"]) + 1
                 break
+
+    # Fallback: infer completion turn by mapping tool_history executes to turn executes.
+    if turns_to_completion is None and has_calc and has_test:
+        execute_success_index = None  # 1-based among execute tool calls
+        exec_seen = 0
+        for call in tool_history:
+            if call.get("tool") != "execute":
+                continue
+            exec_seen += 1
+            cmd = str(call.get("command") or "").lower()
+            code = call.get("exit_code")
+            if code == 0 and ("pytest" in cmd or "unittest" in cmd):
+                execute_success_index = exec_seen
+                break
+        if execute_success_index is not None:
+            # Find the corresponding turn (N-th execute in turn log).
+            exec_turns_seen = 0
+            for row in turns:
+                if row.get("tool_used") == "execute":
+                    exec_turns_seen += 1
+                    if exec_turns_seen == execute_success_index:
+                        heuristic_completed = True
+                        turns_to_completion = int(row["turn"]) + 1
+                        break
 
     turns_to_done = None
     for row in turns:
@@ -229,6 +255,7 @@ def run_mode(
         "enable_steering": enable_steering,
         "enable_compaction": enable_compaction,
         "turns": turn_log,
+        "tool_history": agent.tool_history,
         "metrics": metrics,
     }
 
