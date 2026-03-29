@@ -242,6 +242,18 @@ class CognitionAgent:
                         # Do not mark completed; continue loop.
                         self.turn_count += 1
                         continue
+                    # TASK-045E: tasks that require tests cannot end on [DONE] until
+                    # the same evidence as heuristic completion (tests actually passed).
+                    if not self._explicit_done_allowed():
+                        self.compactor.add_turn("assistant", response)
+                        self.compactor.add_turn(
+                            "system",
+                            "You said [DONE] but tests have not passed yet. "
+                            "Run the test command (pytest) and verify it succeeds "
+                            "before saying [DONE].",
+                        )
+                        self.turn_count += 1
+                        continue
                     self.compactor.add_turn("assistant", response)
                     if self.turn_log is not None:
                         self._append_turn_log(
@@ -627,6 +639,46 @@ class CognitionAgent:
             out.append(p)
         return out
 
+    def _recent_successful_test_command(self) -> bool:
+        """True if any of the last 3 executes was a test run with exit code 0."""
+        recent = self.tool_history[-3:] if self.tool_history else []
+        for t in recent:
+            if t.get("tool") != "execute" or t.get("exit_code") != 0:
+                continue
+            cmd = t.get("command") or ""
+            if _command_looks_like_test_run(cmd):
+                return True
+        return False
+
+    def _task_expects_tests(self) -> bool:
+        """Task text implies the user wants tests run / verified (TASK-045E)."""
+        t = self.task.lower()
+        markers = (
+            "pytest",
+            "unittest",
+            "run the test",
+            "run tests",
+            "run the tests",
+            "verify they pass",
+            "tests pass",
+            "test suite",
+            "passing test",
+        )
+        return any(m in t for m in markers)
+
+    def _explicit_done_allowed(self) -> bool:
+        """
+        For tasks that require tests, explicit [DONE] must match the same bar as
+        heuristic completion (files + successful test), or at least a successful
+        test run if no filenames were extracted from the task text.
+        """
+        if not self._task_expects_tests():
+            return True
+        expected = self._extract_expected_files(self.task)
+        if expected:
+            return self._check_task_completion()
+        return self._recent_successful_test_command()
+
     def _check_task_completion(self) -> bool:
         """
         Heuristic: expected files on disk + a recent successful test run (TASK-045/045D).
@@ -640,14 +692,7 @@ class CognitionAgent:
         )
         if not files_exist:
             return False
-        recent = self.tool_history[-3:] if self.tool_history else []
-        for t in recent:
-            if t.get("tool") != "execute" or t.get("exit_code") != 0:
-                continue
-            cmd = t.get("command") or ""
-            if _command_looks_like_test_run(cmd):
-                return True
-        return False
+        return self._recent_successful_test_command()
 
     def _is_task_complete(self, response: str) -> bool:
         """Check if the model indicates the task is done."""

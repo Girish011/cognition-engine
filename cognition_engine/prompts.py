@@ -39,6 +39,11 @@ test/command succeeded (exit code 0), you MUST respond with [DONE] on its own li
 Do NOT continue working after tests pass. Do NOT re-run tests that
 already passed. Say [DONE] and stop.
 
+IMPORTANT: Installing a package (pip install) is NOT the same as running
+tests. After installing pytest, you MUST run the tests again. Only say
+[DONE] after the test command itself (pytest, python -m pytest, etc.)
+returns exit code 0 with passing results.
+
 Examples (follow these patterns exactly, with a single tool call per response):
 
 [THINK] I should inspect calculator.py before writing any code.

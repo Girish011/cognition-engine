@@ -85,6 +85,12 @@ Verify the agent completes in <10 turns instead of running to max_turns.
 
 **Git:** `git commit -m "TASK-045D: filter heuristic to test commands only"`
 
+### TASK-045E: Prompt + [DONE] validation for “tests must pass”
+**Status:** ✅ DONE
+**Do:** Clarify pip install ≠ tests; reject explicit `[DONE]` when task implies tests but `_check_task_completion`-style evidence is missing.
+
+**Git:** `git commit -m "TASK-045E: validate [DONE] against test evidence + prompt"`
+
 ---
 
 ### TASK-046: Fix Compaction Threshold + Time-Based Escalation

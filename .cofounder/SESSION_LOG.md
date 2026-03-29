@@ -663,3 +663,10 @@ A major limitation of traditional activation steering is that it is "always on".
 - **False-positive fix:** `_check_task_completion()` no longer treats every exit-0 `[EXEC]` as completion. Added module helper `_command_looks_like_test_run()` — matches `python -m pytest`, `python -m unittest`, `python test_…`, or `pytest` invoked as a shell command (with path segments), and explicitly **excludes** `pip`/`pip3 install` and `python -m pip install` so `pip install pytest` does not satisfy the heuristic.
 - **`tool_history`:** execute entries still come from `dict(tool_call)` and include `command` (unchanged); matching uses `tool` + `command` + `exit_code` (not `tool_used`).
 - Git: `TASK-045D: filter heuristic to test commands only`
+
+## 2026-03-29 (Week 8 — TASK-045E: [DONE] must match test evidence)
+
+- **`cognition_engine/prompts.py`:** under COMPLETION RULE, added IMPORTANT text: installing packages is not running tests; must re-run pytest (or equivalent) and only say `[DONE]` after the test command exits 0 with passing results.
+- **`cognition_engine/agent.py`:** `_recent_successful_test_command()` factored from `_check_task_completion()`; `_task_expects_tests()` detects tasks that mention pytest/tests/verify; `_explicit_done_allowed()` — if the task implies tests, `[DONE]` is accepted only when evidence matches the heuristic (expected files on disk + successful test command in recent history), or if no filenames were extracted from the task text, at least a recent successful test run. Otherwise the loop injects a system correction and continues (no session clear).
+- Manual verify: `python scripts/test_steering_agent.py --mode baseline --dir /tmp/task045_v2 --max-turns 20 --auto-approve`
+- Git: `TASK-045E: validate [DONE] against test evidence + prompt`
