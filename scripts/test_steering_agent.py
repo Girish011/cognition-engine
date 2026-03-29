@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -165,6 +166,13 @@ def run_mode(
     print(
         f"Mode={mode} | steering={enable_steering} | compaction={enable_compaction}",
         flush=True,
+    )
+
+    # TASK-045F: calculator harness expects pytest; avoid confounding the agent with pip.
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "pytest"],
+        capture_output=True,
+        check=False,
     )
 
     agent = CognitionAgent(

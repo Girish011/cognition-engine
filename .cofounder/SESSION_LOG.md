@@ -670,3 +670,10 @@ A major limitation of traditional activation steering is that it is "always on".
 - **`cognition_engine/agent.py`:** `_recent_successful_test_command()` factored from `_check_task_completion()`; `_task_expects_tests()` detects tasks that mention pytest/tests/verify; `_explicit_done_allowed()` — if the task implies tests, `[DONE]` is accepted only when evidence matches the heuristic (expected files on disk + successful test command in recent history), or if no filenames were extracted from the task text, at least a recent successful test run. Otherwise the loop injects a system correction and continues (no session clear).
 - Manual verify: `python scripts/test_steering_agent.py --mode baseline --dir /tmp/task045_v2 --max-turns 20 --auto-approve`
 - Git: `TASK-045E: validate [DONE] against test evidence + prompt`
+
+## 2026-03-29 (Week 8 — TASK-045F: pytest in harness + no-tool guard)
+
+- **`scripts/test_steering_agent.py`:** before `CognitionAgent` / `run()`, run `pip install -q pytest` with `sys.executable` so TASK-044 calculator runs are not blocked by a missing pytest in the environment (TASK-045F).
+- **`cognition_engine/agent.py`:** `self._consecutive_no_tool` initialized to 0; after `_parse_tool_calls`, increment if no tools else reset; when count reaches ≥ 3, log `[NO-TOOL-GUARD]`, inject system message requiring `[WRITE]`, `[READ]`, `[EXEC]`, or `[DONE]`, then reset counter (covers degenerate empty / special-token loops with `tool_used: none`).
+- Manual verify: `python scripts/test_steering_agent.py --mode baseline --dir /tmp/task045_v3 --max-turns 20 --auto-approve`
+- Git: `TASK-045F: pre-install pytest + no-tool-output guard`

@@ -91,6 +91,12 @@ Verify the agent completes in <10 turns instead of running to max_turns.
 
 **Git:** `git commit -m "TASK-045E: validate [DONE] against test evidence + prompt"`
 
+### TASK-045F: Harness pytest + no-tool-output guard
+**Status:** ✅ DONE
+**Do:** Pre-install `pytest` in `test_steering_agent.py`; in agent, count consecutive turns with no parseable tool and inject recovery after 3.
+
+**Git:** `git commit -m "TASK-045F: pre-install pytest + no-tool-output guard"`
+
 ---
 
 ### TASK-046: Fix Compaction Threshold + Time-Based Escalation

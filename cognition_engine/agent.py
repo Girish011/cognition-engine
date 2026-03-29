@@ -141,6 +141,8 @@ class CognitionAgent:
         # Tool call history
         self.tool_history: List[Dict] = []
         self.turn_count = 0
+        # TASK-045F: degenerate turns with no parseable tool (e.g. empty / special tokens)
+        self._consecutive_no_tool = 0
 
         # Steering state (optional)
         self.steering = None
@@ -271,6 +273,11 @@ class CognitionAgent:
 
                 # 3. Parse and execute tool calls
                 tool_calls = self._parse_tool_calls(response)
+                if not tool_calls:
+                    self._consecutive_no_tool += 1
+                else:
+                    self._consecutive_no_tool = 0
+
                 tool_results = []
 
                 for tool_call in tool_calls:
@@ -363,6 +370,20 @@ class CognitionAgent:
                         compaction_fired=compaction_fired,
                         compaction_strategy=strat,
                     )
+
+                # TASK-045F: no parseable tool for several turns (degenerate output loop)
+                if self._consecutive_no_tool >= 3:
+                    print(
+                        "[NO-TOOL-GUARD] 3 consecutive turns without a tool call — "
+                        "injecting recovery prompt."
+                    )
+                    self.compactor.add_turn(
+                        "system",
+                        "You have not used any tools for 3 turns. You MUST use "
+                        "[WRITE], [READ], [EXEC], or [DONE] to make progress. "
+                        "Do not output empty responses.",
+                    )
+                    self._consecutive_no_tool = 0
 
                 # TASK-045: heuristic completion (files from task + recent successful execute)
                 if executed_action_tool and self._check_task_completion():
