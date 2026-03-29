@@ -647,3 +647,13 @@ A major limitation of traditional activation steering is that it is "always on".
   - same with `--mode steering --dir /tmp/task044_steering`
   - same with `--mode full_ladder --dir /tmp/task044_full`
 - `python3 -m py_compile` passed on `agent.py`, `compaction.py`, `test_steering_agent.py`.
+
+## 2026-03-29 (Week 8 — TASK-045: Completion detection)
+
+- **Heuristic completion** in `cognition_engine/agent.py`: `_extract_expected_files()` scans the task for relative paths with common extensions (`.py`, `.md`, etc.); `_check_task_completion()` requires all of those files to exist under `working_dir` and at least one `[EXEC]` in the last three `tool_history` entries with `exit_code == 0`. After each turn (post-CHI/compaction), if the guard passes and an action tool has run, the loop stops with the same session semantics as explicit `[DONE]` (`completed_explicitly`, session cleared).
+- **`tool_history` records `exit_code`** for execute tools (via `_execute_tool` → `_tool_execute` returning `(message, code)`); cancelled or failed subprocess paths omit a successful zero code so the heuristic does not misfire.
+- **Anti-loop guard (TASK-045 C):** if the last three history entries share the same tool signature (`_tool_call_signature`), inject a system turn: *You are repeating the same action. If the task is complete, say [DONE].*
+- **`cognition_engine/prompts.py`:** added COMPLETION RULE text to `SYSTEM_PROMPT` and a few-shot block showing `[DONE]` as the follow-up after a successful `pytest`.
+- Repo checklist: `.cofounder/TASKS_WEEK8.md` — TASK-045 marked done.
+- **Manual verify (recommended):** `python scripts/test_steering_agent.py --mode baseline --dir /tmp/task045_calc --max-turns 20 --auto-approve` — expect exit before max turns when files + pytest 0 align with heuristic or model emits `[DONE]`.
+- Git: `TASK-045: completion detection — heuristic + prompt + anti-loop`

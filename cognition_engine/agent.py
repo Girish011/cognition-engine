@@ -7,9 +7,11 @@ and monitors its own cognitive health throughout.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import subprocess
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Any
 
 from mlx_lm import generate
 
@@ -28,6 +30,27 @@ STEERING_LAYER = 16
 STEERING_ALPHA = 0.5
 STEERING_ACTIVATE_THRESHOLD = 0.7
 STEERING_DEACTIVATE_THRESHOLD = 0.8
+
+# TASK-045: filenames mentioned in the task text (relative paths, common extensions)
+_EXPECTED_FILE_RE = re.compile(
+    r"\b([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|md|txt|toml|json|yaml|yml))\b"
+)
+
+
+def _tool_call_signature(tool_call: Dict[str, Any]) -> Tuple[Any, ...]:
+    """Stable key for anti-loop detection (same tool + same args)."""
+    t = tool_call.get("tool")
+    if t == "read":
+        return ("read", tool_call.get("path"))
+    if t == "write":
+        return ("write", tool_call.get("path"), tool_call.get("content"))
+    if t == "edit":
+        return ("edit", tool_call.get("path"), tool_call.get("old"), tool_call.get("new"))
+    if t == "execute":
+        return ("execute", tool_call.get("command"))
+    if t == "think":
+        return ("think", tool_call.get("thought"))
+    return (t, json.dumps(tool_call, sort_keys=True, default=str))
 
 
 class CognitionAgent:
@@ -211,9 +234,12 @@ class CognitionAgent:
                 tool_results = []
 
                 for tool_call in tool_calls:
-                    result = self._execute_tool(tool_call)
+                    result, exec_exit = self._execute_tool(tool_call)
                     tool_results.append(result)
-                    self.tool_history.append(tool_call)
+                    record = dict(tool_call)
+                    if tool_call.get("tool") == "execute" and exec_exit is not None:
+                        record["exit_code"] = exec_exit
+                    self.tool_history.append(record)
                     if tool_call.get("tool") in {"read", "write", "edit", "execute"}:
                         executed_action_tool = True
 
@@ -297,6 +323,33 @@ class CognitionAgent:
                         compaction_fired=compaction_fired,
                         compaction_strategy=strat,
                     )
+
+                # TASK-045: heuristic completion (files from task + recent successful execute)
+                if executed_action_tool and self._check_task_completion():
+                    print(
+                        "[COMPLETION] Heuristic: expected files exist + tests/command "
+                        "succeeded → treating as [DONE]"
+                    )
+                    self.compactor.add_turn(
+                        "system",
+                        "[COMPLETION] All expected files are present and the last "
+                        "command exited successfully. Task marked complete.",
+                    )
+                    self.turn_count += 1
+                    status = "completed"
+                    completed_explicitly = True
+                    break
+
+                # TASK-045: same tool call 3 turns in a row → warn before next generation
+                if len(self.tool_history) >= 3:
+                    last3 = self.tool_history[-3:]
+                    sigs = [_tool_call_signature(t) for t in last3]
+                    if sigs[0] == sigs[1] == sigs[2]:
+                        self.compactor.add_turn(
+                            "system",
+                            "You are repeating the same action. If the task is complete, "
+                            "say [DONE].",
+                        )
 
                 self.turn_count += 1
         except KeyboardInterrupt:
@@ -424,12 +477,15 @@ class CognitionAgent:
         # Exactly one tool call per response.
         return [parsed]
 
-    def _execute_tool(self, tool_call: Dict) -> str:
-        """Execute a single tool call and return the result."""
+    def _execute_tool(self, tool_call: Dict) -> Tuple[str, Optional[int]]:
+        """
+        Execute a single tool call. Returns (message, exit_code) where exit_code
+        is set only for [EXEC] (TASK-045 heuristic completion).
+        """
         tool = tool_call.get("tool")
 
         if tool == "read":
-            return self._tool_read(tool_call["path"])
+            return self._tool_read(tool_call["path"]), None
         if tool == "write":
             result = self._tool_write(tool_call["path"], tool_call["content"])
             # Record file purpose in working memory.
@@ -439,12 +495,15 @@ class CognitionAgent:
                 f"Created or updated {tool_call['path']}: {preview}",
                 related_files=[tool_call["path"]],
             )
-            return result
+            return result, None
         if tool == "edit":
-            return self._tool_edit(
-                tool_call["path"],
-                tool_call["old"],
-                tool_call["new"],
+            return (
+                self._tool_edit(
+                    tool_call["path"],
+                    tool_call["old"],
+                    tool_call["new"],
+                ),
+                None,
             )
         if tool == "execute":
             return self._tool_execute(tool_call["command"])
@@ -455,8 +514,8 @@ class CognitionAgent:
                 thought,
                 related_files=self.anchor_mgr.files_modified,
             )
-            return f"[Thought recorded: {thought[:100]}]"
-        return f"[Unknown tool: {tool}]"
+            return f"[Thought recorded: {thought[:100]}]", None
+        return f"[Unknown tool: {tool}]", None
 
     # ------------------------------------------------------------------
     # Tool implementations
@@ -500,12 +559,12 @@ class CognitionAgent:
         except Exception as e:  # noqa: BLE001
             return f"[ERROR editing {path}: {e}]"
 
-    def _tool_execute(self, command: str) -> str:
-        """Execute a shell command with user approval."""
+    def _tool_execute(self, command: str) -> Tuple[str, Optional[int]]:
+        """Execute a shell command with user approval. Returns (message, exit_code)."""
         if not self.auto_approve:
             approval = input(f"  Execute: `{command}`? [y/N] ")
             if approval.lower() != "y":
-                return "[EXEC cancelled by user]"
+                return "[EXEC cancelled by user]", None
         try:
             result = subprocess.run(
                 command,
@@ -518,15 +577,47 @@ class CognitionAgent:
             output = result.stdout[:1000]
             if result.returncode != 0:
                 output += f"\n[STDERR: {result.stderr[:500]}]"
-            return f"[EXEC `{command}` → exit {result.returncode}]\n{output}"
+            code = result.returncode
+            return f"[EXEC `{command}` → exit {code}]\n{output}", code
         except subprocess.TimeoutExpired:
-            return "[EXEC `{command}` → TIMEOUT (30s)]"
+            return f"[EXEC `{command}` → TIMEOUT (30s)]", None
         except Exception as e:  # noqa: BLE001
-            return f"[EXEC ERROR: {e}]"
+            return f"[EXEC ERROR: {e}]", None
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _extract_expected_files(self, task: str) -> List[str]:
+        """Paths mentioned in the task (relative, deduped). TASK-045."""
+        seen = set()
+        out: List[str] = []
+        for m in _EXPECTED_FILE_RE.finditer(task):
+            p = m.group(1).strip().lstrip("./")
+            if not p or ".." in p or p in seen:
+                continue
+            seen.add(p)
+            out.append(p)
+        return out
+
+    def _check_task_completion(self) -> bool:
+        """
+        Heuristic: if the task names specific files and a recent execute exited 0,
+        treat as complete. TASK-045.
+        """
+        expected = self._extract_expected_files(self.task)
+        if not expected:
+            return False
+        files_exist = all(
+            os.path.isfile(os.path.join(self.working_dir, f)) for f in expected
+        )
+        if not files_exist:
+            return False
+        recent = self.tool_history[-3:] if len(self.tool_history) >= 1 else []
+        last_exec_success = any(
+            t.get("tool") == "execute" and t.get("exit_code") == 0 for t in recent
+        )
+        return last_exec_success
+
     def _is_task_complete(self, response: str) -> bool:
         """Check if the model indicates the task is done."""
         markers = [
@@ -594,5 +685,6 @@ if __name__ == "__main__":
     print(agent._tool_read("test.py"))
 
     # Test execute
-    print(agent._tool_execute("python test.py"))
+    msg, code = agent._tool_execute("python test.py")
+    print(msg, f"(exit {code})")
 

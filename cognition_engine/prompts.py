@@ -34,6 +34,11 @@ Rules:
 - When the task is fully complete and tested, say [DONE] on its own line.
 - Be precise with file paths. Use relative paths from the project root.
 
+COMPLETION RULE: When you have created all requested files AND the last
+test/command succeeded (exit code 0), you MUST respond with [DONE] on its own line.
+Do NOT continue working after tests pass. Do NOT re-run tests that
+already passed. Say [DONE] and stop.
+
 Examples (follow these patterns exactly, with a single tool call per response):
 
 [THINK] I should inspect calculator.py before writing any code.
@@ -48,6 +53,10 @@ class Calculator:
 ```
 
 [EXEC] pytest
+
+(After pytest reports exit 0 and all requested files exist, stop tooling.)
+
+[DONE]
 """
 
 

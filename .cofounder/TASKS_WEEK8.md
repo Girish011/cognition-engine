@@ -18,7 +18,7 @@ never fires), then evaluate Qwen3.5-9B as a model upgrade.
 ---
 
 ### TASK-045: Fix Completion Detection
-**Status:** ⬜ TODO
+**Status:** ✅ DONE
 **Do:** Add heuristic completion detection + strengthen [DONE] prompt
 
 This is the #1 priority. All three TASK-044 runs created files and ran
@@ -239,7 +239,7 @@ demo video (Weeks 11-12). Get the narrative and script structure right.
 ---
 
 ## WEEK 8 CHECKLIST
-- [ ] TASK-045: Fix completion detection — heuristic + prompt + anti-loop (2-3 hrs)
+- [x] TASK-045: Fix completion detection — heuristic + prompt + anti-loop (2-3 hrs)
 - [ ] TASK-046: Fix compaction threshold + steering timeout (2-3 hrs)
 - [ ] TASK-047: Re-run TASK-044 with all fixes (2-3 hrs)
 - [ ] TASK-048: Evaluate Qwen3.5-9B on MLX (3-4 hrs)
