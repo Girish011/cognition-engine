@@ -36,6 +36,34 @@ _EXPECTED_FILE_RE = re.compile(
     r"\b([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|md|txt|toml|json|yaml|yml))\b"
 )
 
+# TASK-045D: successful [EXEC] must look like a test run (not pip install, not cat pytest.ini)
+_PIP_INSTALL_RE = re.compile(r"\bpip3?\s+install\b", re.IGNORECASE)
+_PYPI_INSTALL_RE = re.compile(r"\bpython\s+(-m\s+)?pip\s+install\b", re.IGNORECASE)
+# pytest invoked as a program (segment after start / && / ;), not e.g. `cat pytest.ini`
+_PYTEST_INVOCATION_RE = re.compile(
+    r"(?:^|[;&|])\s*(?:[\w./-]+/)*pytest(?:\s|$)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _command_looks_like_test_run(cmd: str) -> bool:
+    """True when [EXEC] is running tests (TASK-045D). Excludes pip installs etc."""
+    if not cmd or not cmd.strip():
+        return False
+    c = cmd.strip()
+    cl = c.lower()
+    if _PIP_INSTALL_RE.search(c) or _PYPI_INSTALL_RE.search(c):
+        return False
+    if "python -m pytest" in cl:
+        return True
+    if "python -m unittest" in cl:
+        return True
+    if "python test_" in cl:
+        return True
+    if _PYTEST_INVOCATION_RE.search(c):
+        return True
+    return False
+
 
 def _tool_call_signature(tool_call: Dict[str, Any]) -> Tuple[Any, ...]:
     """Stable key for anti-loop detection (same tool + same args)."""
@@ -327,13 +355,13 @@ class CognitionAgent:
                 # TASK-045: heuristic completion (files from task + recent successful execute)
                 if executed_action_tool and self._check_task_completion():
                     print(
-                        "[COMPLETION] Heuristic: expected files exist + tests/command "
-                        "succeeded → treating as [DONE]"
+                        "[COMPLETION] Heuristic: files exist + tests passed "
+                        "→ treating as [DONE]"
                     )
                     self.compactor.add_turn(
                         "system",
-                        "[COMPLETION] All expected files are present and the last "
-                        "command exited successfully. Task marked complete.",
+                        "[COMPLETION] All expected files are present and a test run "
+                        "exited successfully. Task marked complete.",
                     )
                     self.turn_count += 1
                     status = "completed"
@@ -601,8 +629,8 @@ class CognitionAgent:
 
     def _check_task_completion(self) -> bool:
         """
-        Heuristic: if the task names specific files and a recent execute exited 0,
-        treat as complete. TASK-045.
+        Heuristic: expected files on disk + a recent successful test run (TASK-045/045D).
+        Generic exit-0 commands (pip, ls, …) do not count.
         """
         expected = self._extract_expected_files(self.task)
         if not expected:
@@ -612,11 +640,14 @@ class CognitionAgent:
         )
         if not files_exist:
             return False
-        recent = self.tool_history[-3:] if len(self.tool_history) >= 1 else []
-        last_exec_success = any(
-            t.get("tool") == "execute" and t.get("exit_code") == 0 for t in recent
-        )
-        return last_exec_success
+        recent = self.tool_history[-3:] if self.tool_history else []
+        for t in recent:
+            if t.get("tool") != "execute" or t.get("exit_code") != 0:
+                continue
+            cmd = t.get("command") or ""
+            if _command_looks_like_test_run(cmd):
+                return True
+        return False
 
     def _is_task_complete(self, response: str) -> bool:
         """Check if the model indicates the task is done."""

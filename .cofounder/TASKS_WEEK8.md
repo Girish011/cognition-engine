@@ -79,6 +79,12 @@ Verify the agent completes in <10 turns instead of running to max_turns.
 **Time:** 2-3 hours
 **Git:** `git commit -m "TASK-045: completion detection — heuristic + prompt + anti-loop"`
 
+### TASK-045D: Heuristic only on test commands (addendum)
+**Status:** ✅ DONE
+**Do:** Filter `_check_task_completion()` so exit-0 `pip install`, `ls`, etc. do not complete the task; require a command that looks like pytest/unittest/`python test_*`.
+
+**Git:** `git commit -m "TASK-045D: filter heuristic to test commands only"`
+
 ---
 
 ### TASK-046: Fix Compaction Threshold + Time-Based Escalation

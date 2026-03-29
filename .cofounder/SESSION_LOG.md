@@ -657,3 +657,9 @@ A major limitation of traditional activation steering is that it is "always on".
 - Repo checklist: `.cofounder/TASKS_WEEK8.md` — TASK-045 marked done.
 - **Manual verify (recommended):** `python scripts/test_steering_agent.py --mode baseline --dir /tmp/task045_calc --max-turns 20 --auto-approve` — expect exit before max turns when files + pytest 0 align with heuristic or model emits `[DONE]`.
 - Git: `TASK-045: completion detection — heuristic + prompt + anti-loop`
+
+## 2026-03-29 (Week 8 — TASK-045D: test-only heuristic)
+
+- **False-positive fix:** `_check_task_completion()` no longer treats every exit-0 `[EXEC]` as completion. Added module helper `_command_looks_like_test_run()` — matches `python -m pytest`, `python -m unittest`, `python test_…`, or `pytest` invoked as a shell command (with path segments), and explicitly **excludes** `pip`/`pip3 install` and `python -m pip install` so `pip install pytest` does not satisfy the heuristic.
+- **`tool_history`:** execute entries still come from `dict(tool_call)` and include `command` (unchanged); matching uses `tool` + `command` + `exit_code` (not `tool_used`).
+- Git: `TASK-045D: filter heuristic to test commands only`
