@@ -690,3 +690,13 @@ A major limitation of traditional activation steering is that it is "always on".
 - **`cognition_engine/prompts.py`:** `strip_chat_template_artifacts()` removes `<|im_end|>` and regex-strips `<|[^|]*|>`; applied to full response before parsing and to each tool field (read/exec/think/write/edit); `_extract_code_block` applies strip to extracted block text.
 - **`cognition_engine/agent.py`:** import strip; `_tool_execute` strips first (then 045G pytest rewrite); `_execute_tool` defensively strips paths/content/command/thought for read/write/edit/think. Removed temporary `[DEBUG _tool_execute]` print.
 - Git: `TASK-045H: strip chat template tokens from tool arguments`
+
+## 2026-03-29 (Week 8 — TASK-045 follow-up: max_tokens + write path)
+
+- **Cause:** `max_tokens=800` truncated long `[WRITE]` turns (tests + preamble), producing incomplete fenced code blocks; context then contained broken tool results and the model looped.
+- **`CognitionAgent.run(..., max_tokens=2000)`** (default 2000); `generate()` uses this cap.
+- **`scripts/test_steering_agent.py`:** calls `agent.run(..., max_tokens=2000)` explicitly so the harness documents the budget.
+- **`cognition_engine/cli.py`:** `agent` subcommand adds `--max-tokens` (default 2000) passed through to `run`.
+- **`_tool_write`:** `os.makedirs` only when `dirname(full_path)` is non-empty (avoids `makedirs('')` edge cases); temporary **`[DEBUG _tool_write]`** print (path, `working_dir`, `full_path`, `content_len`) before open.
+- **`strip_chat_template_artifacts` docstring:** clarifies path vs body stripping.
+- Git: `TASK-045: max_tokens 2000 + write debug + makedirs guard`

@@ -14,7 +14,9 @@ _CHAT_TEMPLATE_BRACKET_RE = re.compile(r"<\|[^|]*\|>")
 def strip_chat_template_artifacts(s: str) -> str:
     """
     Remove chat-template noise from model output before parsing tool arguments (TASK-045H).
-    Strips <|im_end|> and any <|...|> tokens (e.g. <|im_start|>, <|im_end|>).
+    Strips <|im_end|> and any <|...|> tokens (e.g. <|im_start|>).
+    Applied separately to path vs file body: paths keep valid ``subdir/file`` layout;
+    code bodies only lose template suffixes, not directory structure.
     """
     if not s:
         return s

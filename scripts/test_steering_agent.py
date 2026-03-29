@@ -185,7 +185,8 @@ def run_mode(
         enable_compaction=enable_compaction,
         turn_log=turn_log,
     )
-    agent.run(max_turns=max_turns)
+    # Long [WRITE] blocks (e.g. test file + preamble) need headroom vs old 800 cap.
+    agent.run(max_turns=max_turns, max_tokens=2000)
 
     chi_min = min(agent.chi_monitor.chi_history) if agent.chi_monitor.chi_history else None
     chi_final = (

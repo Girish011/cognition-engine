@@ -191,7 +191,7 @@ class CognitionAgent:
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
-    def run(self, max_turns: int = 50):
+    def run(self, max_turns: int = 50, *, max_tokens: int = 2000):
         """
         Main agent loop.
 
@@ -203,6 +203,8 @@ class CognitionAgent:
         5. Update CHI
         6. Check if compaction needed
         7. Repeat until task done or max_turns
+
+        max_tokens: per-turn generation cap (raise for long [WRITE] / multi-tool outputs).
         """
         print(f"Starting agent on task: {self.task}")
         print(f"Working directory: {os.path.abspath(self.working_dir)}\n")
@@ -228,7 +230,7 @@ class CognitionAgent:
                     self.model,
                     self.tokenizer,
                     prompt=context,
-                    max_tokens=800,
+                    max_tokens=max_tokens,
                 )
 
                 # Treat explicit [DONE] as completion. Do not rely on natural-language
@@ -603,8 +605,14 @@ class CognitionAgent:
     def _tool_write(self, path: str, content: str) -> str:
         """Write content to a file."""
         full_path = os.path.join(self.working_dir, path)
+        print(
+            f"[DEBUG _tool_write] path={path!r} working_dir={self.working_dir!r} "
+            f"full={full_path!r} content_len={len(content)}"
+        )
         try:
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            parent = os.path.dirname(full_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(content)
             self.anchor_mgr.add_file(path)
