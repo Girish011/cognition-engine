@@ -216,6 +216,14 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   Multi-vector doesn't help. The intervention ladder's value is in CHI monitoring
   + compaction, not in steering alone. Steering provides marginal CHI improvement
   (+0.01-0.02) but doesn't change task outcomes on a 7B model.
+- 2026-03-29: TurboQuant (Google, ICLR 2026) — KV cache compression to 3-bit, 
+  ~5x memory reduction, zero accuracy loss. MLX implementation already exists.
+  NOT a threat: compresses KV cache (stored attention keys/values), we monitor 
+  hidden states and logits (different tensors). Zero interference with CHI or 
+  steering. Actually beneficial: extends context runway, making degradation 
+  monitoring MORE valuable (model runs longer but still degrades cognitively).
+  TODO (Week 8-9): test CHI accuracy with TurboQuant-compressed KV cache.
+  Potential demo story: "TurboQuant extends the conversation. We keep it coherent."
 
 ## KEY LEARNINGS (condensed)
 
