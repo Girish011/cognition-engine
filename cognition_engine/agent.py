@@ -522,11 +522,19 @@ class CognitionAgent:
             chi_raw = 0.0
 
         tool_used = tool_calls[0].get("tool", "none") if tool_calls else "none"
+        exec_command = None
+        exec_exit_code = None
+        if tool_used == "execute":
+            # Tool history is appended before turn_log; take the most recent execute.
+            for h in reversed(self.tool_history):
+                if h.get("tool") == "execute":
+                    exec_command = h.get("command")
+                    exec_exit_code = h.get("exit_code")
+                    break
         resp_tokens = len(self.tokenizer.encode(response))
         ctx_tokens = self.compactor.get_context_tokens()
 
-        self.turn_log.append(
-            {
+        row = {
                 "turn": self.turn_count,
                 "chi_score": chi_score,
                 "chi_raw": chi_raw,
@@ -540,12 +548,14 @@ class CognitionAgent:
                 "compaction_fired": compaction_fired,
                 "compaction_strategy": compaction_strategy,
                 "tool_used": tool_used,
+                "execute_command": exec_command,
+                "execute_exit_code": exec_exit_code,
                 "response_length": resp_tokens,
                 "context_length": ctx_tokens,
                 "files_modified": list(self.anchor_mgr.files_modified),
                 "response_preview": response[:100],
             }
-        )
+        self.turn_log.append(row)
 
     # ------------------------------------------------------------------
     # Tool parsing and dispatch

@@ -107,13 +107,29 @@ def compute_metrics(
     pytest_ran = _pytest_ran(tool_history)
     reached_done = any(row.get("tool_used") == "done" for row in turns)
 
+    # Heuristic completion: files exist + successful test execution (even if model never emits [DONE]).
+    heuristic_completed = False
+    turns_to_completion = None
+    if has_calc and has_test:
+        for row in turns:
+            if row.get("tool_used") != "execute":
+                continue
+            cmd = str(row.get("execute_command") or "")
+            code = row.get("execute_exit_code")
+            if code == 0 and ("pytest" in cmd.lower() or "unittest" in cmd.lower()):
+                heuristic_completed = True
+                turns_to_completion = int(row["turn"]) + 1
+                break
+
     turns_to_done = None
     for row in turns:
         if row.get("tool_used") == "done":
             turns_to_done = int(row["turn"]) + 1
             break
 
-    minimum_bar = bool(has_calc and has_test and pytest_ran and reached_done)
+    turns_to_any_completion = turns_to_done if turns_to_done is not None else turns_to_completion
+
+    minimum_bar = bool(has_calc and has_test and pytest_ran and (reached_done or heuristic_completed))
 
     return {
         "task_completed_minimum_bar": minimum_bar,
@@ -121,7 +137,8 @@ def compute_metrics(
         "test_calculator_py_exists": has_test,
         "pytest_executed": pytest_ran,
         "reached_explicit_done": reached_done,
-        "turns_to_completion_or_done": turns_to_done,
+        "reached_heuristic_completion": heuristic_completed,
+        "turns_to_completion_or_done": turns_to_any_completion,
         "turns_recorded": len(turns),
         "max_turns_budget": max_turns,
         "total_action_tool_calls": _action_tool_calls(tool_history),
