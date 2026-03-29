@@ -683,3 +683,10 @@ A major limitation of traditional activation steering is that it is "always on".
 - **`cognition_engine/prompts.py`:** few-shot example now uses `[EXEC] python -m pytest`; COMPLETION hint prefers `python -m pytest` for venv correctness.
 - **`cognition_engine/agent.py`:** `_tool_execute` normalizes bare `pytest`, `pytest .`, and commands starting with `pytest ` to `sys.executable -m pytest` before approval/subprocess; output messages use the resolved command.
 - Git: `TASK-045G: fix pytest PATH — use python -m pytest`
+
+## 2026-03-29 (Week 8 — TASK-045H: chat template tokens in tool args)
+
+- **Root cause:** Qwen-style outputs append `<|im_end|>` (and similar `<|...|>` tokens) to lines; a command like `python -m pytest<|im_end|>` was passed to the shell and failed with a syntax error.
+- **`cognition_engine/prompts.py`:** `strip_chat_template_artifacts()` removes `<|im_end|>` and regex-strips `<|[^|]*|>`; applied to full response before parsing and to each tool field (read/exec/think/write/edit); `_extract_code_block` applies strip to extracted block text.
+- **`cognition_engine/agent.py`:** import strip; `_tool_execute` strips first (then 045G pytest rewrite); `_execute_tool` defensively strips paths/content/command/thought for read/write/edit/think. Removed temporary `[DEBUG _tool_execute]` print.
+- Git: `TASK-045H: strip chat template tokens from tool arguments`

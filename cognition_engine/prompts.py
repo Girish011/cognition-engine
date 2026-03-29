@@ -4,7 +4,23 @@ Prompt templates and tool-call parser for the Cognition Engine agent (TASK-024).
 
 from __future__ import annotations
 
+import re
 from typing import Optional, Tuple, Dict
+
+# Qwen / chat models often append template tokens to the end of generations (e.g. <|im_end|>).
+_CHAT_TEMPLATE_BRACKET_RE = re.compile(r"<\|[^|]*\|>")
+
+
+def strip_chat_template_artifacts(s: str) -> str:
+    """
+    Remove chat-template noise from model output before parsing tool arguments (TASK-045H).
+    Strips <|im_end|> and any <|...|> tokens (e.g. <|im_start|>, <|im_end|>).
+    """
+    if not s:
+        return s
+    t = s.replace("<|im_end|>", "")
+    t = _CHAT_TEMPLATE_BRACKET_RE.sub("", t)
+    return t.strip()
 
 
 SYSTEM_PROMPT = """You are Cognition Engine, an AI coding assistant running locally.
@@ -82,7 +98,7 @@ def parse_tool_call(response: str) -> Dict | None:
     if not response:
         return None
 
-    text = response.strip()
+    text = strip_chat_template_artifacts(response.strip())
 
     # [DONE] has priority: we treat it as task completion (case-insensitive)
     if "[DONE]" in text.upper():
@@ -122,7 +138,7 @@ def parse_tool_call(response: str) -> Dict | None:
                 path = lines[directive_index + 1].strip()
         if not path:
             return None
-        return {"tool": "read", "path": path}
+        return {"tool": "read", "path": strip_chat_template_artifacts(path)}
 
     # [EXEC] command
     if directive == "EXEC":
@@ -131,13 +147,14 @@ def parse_tool_call(response: str) -> Dict | None:
             command = lines[directive_index + 1].strip()
         if not command:
             return None
-        return {"tool": "execute", "command": command}
+        return {"tool": "execute", "command": strip_chat_template_artifacts(command)}
 
     # [THINK] thought
     if directive == "THINK":
         thought = rest
         if not thought and directive_index + 1 < len(lines):
             thought = lines[directive_index + 1].strip()
+        thought = strip_chat_template_artifacts(thought) if thought else thought
         return {"tool": "think", "thought": thought}
 
     # [WRITE] path\n```\ncontent\n```
@@ -147,9 +164,11 @@ def parse_tool_call(response: str) -> Dict | None:
             path = lines[directive_index + 1].strip()
         if not path:
             return None
+        path = strip_chat_template_artifacts(path)
         content = _extract_code_block(text)
         if content is None:
             return None
+        content = strip_chat_template_artifacts(content)
         return {"tool": "write", "path": path, "content": content}
 
     # [EDIT] path\n```old\n...\n```new\n...\n```
@@ -159,9 +178,12 @@ def parse_tool_call(response: str) -> Dict | None:
             path = lines[directive_index + 1].strip()
         if not path:
             return None
+        path = strip_chat_template_artifacts(path)
         old_text, new_text = _extract_edit_blocks(text)
         if old_text is None:
             return None
+        old_text = strip_chat_template_artifacts(old_text)
+        new_text = strip_chat_template_artifacts(new_text)
         return {"tool": "edit", "path": path, "old": old_text, "new": new_text}
 
     return None
@@ -175,7 +197,7 @@ def _extract_code_block(text: str) -> Optional[str]:
     end = text.find("```", start + 3)
     if end == -1:
         return None
-    return text[start + 3 : end].strip()
+    return strip_chat_template_artifacts(text[start + 3 : end].strip())
 
 
 def _extract_edit_blocks(text: str) -> Tuple[Optional[str], Optional[str]]:
@@ -218,6 +240,14 @@ if __name__ == "__main__":
     assert parse_tool_call("[EXEC] python -m pytest") == {
         "tool": "execute",
         "command": "python -m pytest",
+    }
+    assert parse_tool_call("[EXEC] python -m pytest<|im_end|>") == {
+        "tool": "execute",
+        "command": "python -m pytest",
+    }
+    assert parse_tool_call("[READ] calculator.py<|im_end|>") == {
+        "tool": "read",
+        "path": "calculator.py",
     }
     think = parse_tool_call("[THINK] I need to check the schema")
     assert think and think["tool"] == "think" and think["thought"].startswith(

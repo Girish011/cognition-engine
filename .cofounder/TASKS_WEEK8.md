@@ -103,6 +103,12 @@ Verify the agent completes in <10 turns instead of running to max_turns.
 
 **Git:** `git commit -m "TASK-045G: fix pytest PATH — use python -m pytest"`
 
+### TASK-045H: Strip chat template tokens from tool arguments
+**Status:** ✅ DONE
+**Do:** `strip_chat_template_artifacts()` — remove `<|im_end|>` and `<|...|>` from parsed paths/commands/content; apply in `parse_tool_call`, `_tool_execute`, and defensively in tool dispatch.
+
+**Git:** `git commit -m "TASK-045H: strip chat template tokens from tool arguments"`
+
 ---
 
 ### TASK-046: Fix Compaction Threshold + Time-Based Escalation

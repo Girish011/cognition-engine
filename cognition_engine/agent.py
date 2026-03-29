@@ -20,7 +20,11 @@ from cognition_engine.chi import CHIMonitor
 from cognition_engine.compaction import ContextCompactor
 from cognition_engine.anchors import AnchorManager
 from cognition_engine.memory import WorkingMemory
-from cognition_engine.prompts import build_system_prompt, parse_tool_call
+from cognition_engine.prompts import (
+    build_system_prompt,
+    parse_tool_call,
+    strip_chat_template_artifacts,
+)
 from cognition_engine.session import SessionManager
 
 # ------------------------------------------------------------------
@@ -547,9 +551,12 @@ class CognitionAgent:
         tool = tool_call.get("tool")
 
         if tool == "read":
-            return self._tool_read(tool_call["path"]), None
+            return self._tool_read(strip_chat_template_artifacts(tool_call["path"])), None
         if tool == "write":
-            result = self._tool_write(tool_call["path"], tool_call["content"])
+            result = self._tool_write(
+                strip_chat_template_artifacts(tool_call["path"]),
+                strip_chat_template_artifacts(tool_call["content"]),
+            )
             # Record file purpose in working memory.
             preview = tool_call["content"][:100]
             self.memory.add_note(
@@ -561,16 +568,16 @@ class CognitionAgent:
         if tool == "edit":
             return (
                 self._tool_edit(
-                    tool_call["path"],
-                    tool_call["old"],
-                    tool_call["new"],
+                    strip_chat_template_artifacts(tool_call["path"]),
+                    strip_chat_template_artifacts(tool_call["old"]),
+                    strip_chat_template_artifacts(tool_call["new"]),
                 ),
                 None,
             )
         if tool == "execute":
             return self._tool_execute(tool_call["command"])
         if tool == "think":
-            thought = tool_call["thought"]
+            thought = strip_chat_template_artifacts(tool_call["thought"])
             self.memory.add_note(
                 "decision",
                 thought,
@@ -623,8 +630,8 @@ class CognitionAgent:
 
     def _tool_execute(self, command: str) -> Tuple[str, Optional[int]]:
         """Execute a shell command with user approval. Returns (message, exit_code)."""
+        cmd = strip_chat_template_artifacts(command)
         # TASK-045G: bare `pytest` may not be on PATH in the subprocess; use venv python.
-        cmd = command
         stripped = cmd.strip()
         if stripped in ("pytest", "pytest ."):
             cmd = f"{sys.executable} -m pytest"
