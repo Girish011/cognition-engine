@@ -119,7 +119,7 @@ def run_agent(args: argparse.Namespace) -> None:
         auto_approve=args.auto_approve,
         enable_steering=args.enable_steering,
     )
-    agent.run(max_turns=args.max_turns, max_tokens=args.max_tokens)
+    agent.run(max_turns=args.max_turns)
 
 
 def show_status(args: argparse.Namespace) -> None:
@@ -171,12 +171,6 @@ def main() -> None:
         "--model", default="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
     )
     agent_parser.add_argument("--max-turns", type=int, default=50)
-    agent_parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=2000,
-        help="Max new tokens per agent turn (tool calls, code blocks)",
-    )
     agent_parser.add_argument(
         "--resume", action="store_true", help="Resume interrupted session"
     )

@@ -70,6 +70,29 @@ def _command_looks_like_test_run(cmd: str) -> bool:
     return False
 
 
+def _truncate_at_stop_strings(text: str, stop_strings: List[str]) -> str:
+    """
+    Hard-stop generation artifacts for chat-template models (TASK-045I).
+
+    MLX generate() doesn't expose stop strings in its public signature; Qwen-style
+    generations often contain <|im_end|> after the "real" response, followed by
+    garbage (<|im_start|> loops). We truncate the returned string at the earliest
+    stop marker so tool parsing and context stay clean.
+    """
+    if not text:
+        return text
+    candidates = [s for s in stop_strings if s]
+    if not candidates:
+        return text
+    earliest = None
+    for s in candidates:
+        i = text.find(s)
+        if i == -1:
+            continue
+        earliest = i if earliest is None else min(earliest, i)
+    return text if earliest is None else text[:earliest]
+
+
 def _tool_call_signature(tool_call: Dict[str, Any]) -> Tuple[Any, ...]:
     """Stable key for anti-loop detection (same tool + same args)."""
     t = tool_call.get("tool")
@@ -191,7 +214,7 @@ class CognitionAgent:
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
-    def run(self, max_turns: int = 50, *, max_tokens: int = 2000):
+    def run(self, max_turns: int = 50):
         """
         Main agent loop.
 
@@ -203,8 +226,6 @@ class CognitionAgent:
         5. Update CHI
         6. Check if compaction needed
         7. Repeat until task done or max_turns
-
-        max_tokens: per-turn generation cap (raise for long [WRITE] / multi-tool outputs).
         """
         print(f"Starting agent on task: {self.task}")
         print(f"Working directory: {os.path.abspath(self.working_dir)}\n")
@@ -230,7 +251,14 @@ class CognitionAgent:
                     self.model,
                     self.tokenizer,
                     prompt=context,
-                    max_tokens=max_tokens,
+                    max_tokens=800,
+                )
+                response = _truncate_at_stop_strings(
+                    response,
+                    [
+                        getattr(self.tokenizer, "eos_token", None),
+                        "<|im_end|>",
+                    ],
                 )
 
                 # Treat explicit [DONE] as completion. Do not rely on natural-language
@@ -605,14 +633,8 @@ class CognitionAgent:
     def _tool_write(self, path: str, content: str) -> str:
         """Write content to a file."""
         full_path = os.path.join(self.working_dir, path)
-        print(
-            f"[DEBUG _tool_write] path={path!r} working_dir={self.working_dir!r} "
-            f"full={full_path!r} content_len={len(content)}"
-        )
         try:
-            parent = os.path.dirname(full_path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(content)
             self.anchor_mgr.add_file(path)
