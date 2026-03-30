@@ -125,6 +125,37 @@ class ContextCompactor:
             parts.append(f"{prefix}: {turn.get('content', '')}")
         return "\n".join(parts)
 
+    def build_generation_prompt(self, tokenizer) -> str:
+        """
+        Full prompt for the next assistant turn. Prefer HF chat_template (Qwen
+        <|im_start|> / `</think>`) so the model is in assistant role and stops cleanly.
+        Falls back to legacy ``[TASK]:`` + ``User:/Assistant:`` + ``Assistant:`` suffix.
+        """
+        tmpl = getattr(tokenizer, "chat_template", None)
+        if not getattr(tokenizer, "apply_chat_template", None) or tmpl is None:
+            return self._build_context() + "\nAssistant: "
+        messages: List[Dict[str, str]] = []
+        if self.anchor_text:
+            messages.append({"role": "system", "content": self.anchor_text})
+        for turn in self.conversation_turns:
+            role = turn.get("role", "assistant")
+            content = turn.get("content", "")
+            # Tool / memory injections are "environment" text — treat as user turns for chat templates.
+            if role == "system":
+                messages.append({"role": "user", "content": content})
+            elif role == "user":
+                messages.append({"role": "user", "content": content})
+            else:
+                messages.append({"role": "assistant", "content": content})
+        try:
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        except Exception:
+            return self._build_context() + "\nAssistant: "
+
     def _trim(self, keep_last: int = 5) -> str:
         """Keep anchor + last N turns. Fast, no model call."""
         if keep_last <= 0:

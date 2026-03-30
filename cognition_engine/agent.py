@@ -14,7 +14,7 @@ import subprocess
 import sys
 from typing import List, Dict, Optional, Tuple, Any
 
-from mlx_lm import generate
+from mlx_lm import stream_generate
 
 from cognition_engine.chi import CHIMonitor
 from cognition_engine.compaction import ContextCompactor
@@ -68,29 +68,6 @@ def _command_looks_like_test_run(cmd: str) -> bool:
     if _PYTEST_INVOCATION_RE.search(c):
         return True
     return False
-
-
-def _truncate_at_stop_strings(text: str, stop_strings: List[str]) -> str:
-    """
-    Hard-stop generation artifacts for chat-template models (TASK-045I).
-
-    MLX generate() doesn't expose stop strings in its public signature; Qwen-style
-    generations often contain <|im_end|> after the "real" response, followed by
-    garbage (<|im_start|> loops). We truncate the returned string at the earliest
-    stop marker so tool parsing and context stay clean.
-    """
-    if not text:
-        return text
-    candidates = [s for s in stop_strings if s]
-    if not candidates:
-        return text
-    earliest = None
-    for s in candidates:
-        i = text.find(s)
-        if i == -1:
-            continue
-        earliest = i if earliest is None else min(earliest, i)
-    return text if earliest is None else text[:earliest]
 
 
 def _tool_call_signature(tool_call: Dict[str, Any]) -> Tuple[Any, ...]:
@@ -242,24 +219,18 @@ class CognitionAgent:
                     if anchor:
                         self.compactor.add_turn("system", anchor)
 
-                # 2. Build context and generate
-                context = self.compactor._build_context()
-
-                # Add generation prompt
-                context += "\nAssistant: "
-                response = generate(
+                # 2. Build prompt (chat template when available) and stream-generate
+                context = self.compactor.build_generation_prompt(self.tokenizer)
+                response_chunks: List[str] = []
+                for gen_result in stream_generate(
                     self.model,
                     self.tokenizer,
                     prompt=context,
                     max_tokens=800,
-                )
-                response = _truncate_at_stop_strings(
-                    response,
-                    [
-                        getattr(self.tokenizer, "eos_token", None),
-                        "<|im_end|>",
-                    ],
-                )
+                ):
+                    if gen_result.text:
+                        response_chunks.append(gen_result.text)
+                response = "".join(response_chunks)
 
                 # Treat explicit [DONE] as completion. Do not rely on natural-language
                 # "task is complete" phrases, since those can appear prematurely and

@@ -700,3 +700,10 @@ A major limitation of traditional activation steering is that it is "always on".
 - **`_tool_write`:** `os.makedirs` only when `dirname(full_path)` is non-empty (avoids `makedirs('')` edge cases); temporary **`[DEBUG _tool_write]`** print (path, `working_dir`, `full_path`, `content_len`) before open.
 - **`strip_chat_template_artifacts` docstring:** clarifies path vs body stripping.
 - Git: `TASK-045: max_tokens 2000 + write debug + makedirs guard`
+
+## 2026-03-30 (Week 8 — TASK-045: Qwen chat template + `stream_generate`)
+
+- **Legacy `_build_context()`** (diagnostic): `'[TASK]: test task\\n\\nUser: hello\\nAssistant: hi there'` — plain `[TASK]:` + `User:`/`Assistant:` lines, **not** `<|im_start|>` chat format.
+- **`ContextCompactor.build_generation_prompt(tokenizer)`:** when `chat_template` is set, builds `messages` (anchor → `system`; tool/memory `system` turns → `user`; `user`/`assistant` unchanged) and returns `apply_chat_template(..., add_generation_prompt=True)`; else falls back to `_build_context() + "\\nAssistant: "`.
+- **`cognition_engine/agent.py`:** replaced `mlx_lm.generate` + `_truncate_at_stop_strings` with **`mlx_lm.stream_generate`** (800 cap); concatenates `GenerationResponse.text` segments. MLX stops at `tokenizer.eos_token_ids` (Qwen: `eos_token_id` **151645** = `</think>`).
+- Git: `TASK-045: Qwen chat template + stream_generate`
