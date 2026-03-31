@@ -70,6 +70,26 @@ def _command_looks_like_test_run(cmd: str) -> bool:
     return False
 
 
+def _truncate_at_stop_strings(text: str, stop_strings: List[str]) -> str:
+    """
+    Defense-in-depth stop-string truncation for chat-template artifacts.
+    Even with EOS-based stopping, some models may still surface stop markers
+    in decoded text. Keep tool parsing and subprocess commands clean.
+    """
+    if not text:
+        return text
+    candidates = [s for s in stop_strings if s]
+    if not candidates:
+        return text
+    earliest = None
+    for s in candidates:
+        i = text.find(s)
+        if i == -1:
+            continue
+        earliest = i if earliest is None else min(earliest, i)
+    return text if earliest is None else text[:earliest]
+
+
 def _tool_call_signature(tool_call: Dict[str, Any]) -> Tuple[Any, ...]:
     """Stable key for anti-loop detection (same tool + same args)."""
     t = tool_call.get("tool")
@@ -219,8 +239,24 @@ class CognitionAgent:
                     if anchor:
                         self.compactor.add_turn("system", anchor)
 
-                # 2. Build prompt (chat template when available) and stream-generate
-                context = self.compactor.build_generation_prompt(self.tokenizer)
+                # 2. Build context and generate (plain-text format that worked in Week 5)
+                context = self.compactor._build_context()
+                context += "\nAssistant: "
+
+                eos_ids: set[int] = set()
+                eos_token_id = getattr(self.tokenizer, "eos_token_id", None)
+                if isinstance(eos_token_id, list):
+                    eos_ids.update(int(x) for x in eos_token_id if x is not None)
+                elif eos_token_id is not None:
+                    eos_ids.add(int(eos_token_id))
+
+                try:
+                    im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+                    if im_end_id is not None:
+                        eos_ids.add(int(im_end_id))
+                except Exception:
+                    pass
+
                 response_chunks: List[str] = []
                 for gen_result in stream_generate(
                     self.model,
@@ -230,7 +266,13 @@ class CognitionAgent:
                 ):
                     if gen_result.text:
                         response_chunks.append(gen_result.text)
+                    # stream_generate yields a final record with finish_reason; break defensively.
+                    if getattr(gen_result, "finish_reason", None) == "stop":
+                        break
+                    if eos_ids and gen_result.token in eos_ids:
+                        break
                 response = "".join(response_chunks)
+                response = _truncate_at_stop_strings(response, ["<|im_end|>", "<|im_start|>"])
 
                 # Treat explicit [DONE] as completion. Do not rely on natural-language
                 # "task is complete" phrases, since those can appear prematurely and
