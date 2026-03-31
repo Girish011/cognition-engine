@@ -707,3 +707,37 @@ A major limitation of traditional activation steering is that it is "always on".
 - **`ContextCompactor.build_generation_prompt(tokenizer)`:** when `chat_template` is set, builds `messages` (anchor → `system`; tool/memory `system` turns → `user`; `user`/`assistant` unchanged) and returns `apply_chat_template(..., add_generation_prompt=True)`; else falls back to `_build_context() + "\\nAssistant: "`.
 - **`cognition_engine/agent.py`:** replaced `mlx_lm.generate` + `_truncate_at_stop_strings` with **`mlx_lm.stream_generate`** (800 cap); concatenates `GenerationResponse.text` segments. MLX stops at `tokenizer.eos_token_ids` (Qwen: `eos_token_id` **151645** = `</think>`).
 - Git: `TASK-045: Qwen chat template + stream_generate`
+
+## 2026-03-31 (Week 8 — TASK-046: Compaction threshold + escalation ladder)
+
+- Implemented TASK-046 in `cognition_engine/agent.py` and `cognition_engine/compaction.py`.
+- **Compaction threshold + grace (PART A):**
+  - Set `COMPACTION_CHI_THRESHOLD = 0.65` and `COMPACTION_GRACE_TURNS = 3`.
+  - Agent tracks `_turns_below_compaction`; resets when CHI recovers.
+- **Steering timeout escalation (PART B):**
+  - Set `STEERING_TIMEOUT_TURNS = 5`.
+  - If steering stays active for ≥5 turns and CHI is still <0.65, force compaction.
+- **Guard-triggered compaction (PART C):**
+  - Track `_guard_fire_count` and increment on `[NO-TOOL-GUARD]` and anti-loop guard injections.
+  - If guard fires ≥2 times in a session, force compaction regardless of CHI.
+  - Reset guard counter after compaction.
+- **Post-compaction steering reset (PART D):**
+  - When compaction fires, steering is deactivated and steering-active turn counters reset so CHI can re-evaluate on fresh context before re-engaging.
+- Minor robustness fix: `_tool_write` no longer calls `os.makedirs('')` for top-level files.
+
+### Manual test steps (TASK-046)
+
+1. Baseline regression (compaction should NOT fire):
+   - `caffeinate -dimsu .venv/bin/python3 -u scripts/test_steering_agent.py --mode baseline --dir /tmp/task046_baseline --max-turns 20 --auto-approve`
+   - Verify no `[COMPACTION]` lines appear (compaction is disabled in baseline mode) and the task completes via `[DONE]` or heuristic completion when tests pass.
+2. Full ladder (compaction should fire when steering/CHI can’t recover):
+   - `caffeinate -dimsu .venv/bin/python3 -u scripts/test_steering_agent.py --mode full_ladder --dir /tmp/task046_full --max-turns 20 --auto-approve`
+   - Watch for:
+     - `[COMPACTION] Forced ... (chi_below_0.65 for 3 turns)` OR
+     - `[COMPACTION] Forced ... (steering_timeout=...)`
+     - followed by `[STEERING] Reset: deactivated after compaction.`
+3. Guard-triggered compaction (manual log verification):
+   - In the full ladder run, look for two occurrences of:
+     - `[NO-TOOL-GUARD] ... injecting recovery prompt.` and/or the anti-loop system injection
+   - Then verify the next compaction is forced with:
+     - `[COMPACTION] Forced ... (guard_fire_count=2)`

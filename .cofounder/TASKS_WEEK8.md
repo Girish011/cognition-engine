@@ -112,61 +112,46 @@ Verify the agent completes in <10 turns instead of running to max_turns.
 ---
 
 ### TASK-046: Fix Compaction Threshold + Time-Based Escalation
-**Status:** ⬜ TODO
-**Do:** Lower compaction threshold + add steering timeout
+Status: ✅ DONE
 
-TASK-044 showed steering keeps CHI at ~0.60, which prevents the 0.50
-compaction threshold from triggering. Level 2 blocks Level 3.
+PART A — Lower compaction threshold with grace period:
+- COMPACTION_CHI_THRESHOLD = 0.65  (was 0.50)
+- COMPACTION_GRACE_TURNS = 3
+- Track _turns_below_compaction, reset when CHI recovers
+- Same logic as original spec
 
-**Fix 1 — Lower compaction threshold:**
+PART B — Steering timeout escalation:
+- STEERING_TIMEOUT_TURNS = 5  (was 8, lowered because tasks
+  complete in 6 turns now)
+- Force compaction when steering can't recover CHI
 
-Change from `CHI < 0.5` to `CHI < 0.65` for compaction consideration.
-But don't compact immediately — add a grace period:
+PART C — Guard-triggered compaction (NEW):
+- Track _guard_fire_count (incremented by no-tool guard
+  and anti-loop guard)
+- If _guard_fire_count >= 2 within a session, force compaction
+  regardless of CHI value
+- Reset counter after compaction fires
+- Logic: if the model needed 2 behavioral nudges and still
+  isn't producing tool calls, context is poisoned
 
-```python
-COMPACTION_CHI_THRESHOLD = 0.65
-COMPACTION_GRACE_TURNS = 3  # must stay below threshold for 3 turns
+PART D — Post-compaction steering reset:
+- After compaction fires, deactivate steering and reset
+  _steering_active_turns to 0
+- Let CHI re-evaluate on the fresh context before re-engaging
+- Prevents stale steering state from carrying over
 
-# Track consecutive turns below threshold
-if chi < COMPACTION_CHI_THRESHOLD:
-    self._turns_below_compaction += 1
-else:
-    self._turns_below_compaction = 0
+TESTING:
+- Test 1: Run baseline on calculator task — should complete
+  in ~6 turns, compaction should NOT fire (regression check)
+- Test 2: Run steering mode on calculator — verify compaction
+  fires if steering can't hold CHI
+- Test 3: Run a harder task (multi-file or one the 7B model
+  struggles with) to exercise the full ladder path
+- Test 4: Manually verify guard-triggered compaction by
+  checking logs for [NO-TOOL-GUARD] + [COMPACTION] sequence
 
-if self._turns_below_compaction >= COMPACTION_GRACE_TURNS:
-    print(f"[COMPACTION] CHI below {COMPACTION_CHI_THRESHOLD} for "
-          f"{COMPACTION_GRACE_TURNS} turns — compacting")
-    self.compactor.compact(strategy="auto")
-    self._turns_below_compaction = 0
-```
-
-**Fix 2 — Steering timeout escalation:**
-
-If steering has been active for N consecutive turns without CHI
-recovering above the deactivation threshold, force compaction:
-
-```python
-STEERING_TIMEOUT_TURNS = 8  # if steering active 8+ turns, escalate
-
-if self.steering_active:
-    self._steering_active_turns += 1
-else:
-    self._steering_active_turns = 0
-
-if self._steering_active_turns >= STEERING_TIMEOUT_TURNS:
-    print(f"[ESCALATION] Steering active {STEERING_TIMEOUT_TURNS} turns "
-          f"without recovery — forcing Level 3 compaction")
-    self.compactor.compact(strategy="auto")
-    self._steering_active_turns = 0
-```
-
-**Manual test:** Run the steered agent with these fixes. Verify:
-1. Compaction fires when CHI stays around 0.60 for 3+ turns
-2. After compaction, context length drops significantly
-3. Model gets a "fresh start" and CHI recovers (even temporarily)
-
-**Time:** 2-3 hours
-**Git:** `git commit -m "TASK-046: compaction threshold + steering timeout escalation"`
+Time: 2-3 hours
+Git: TASK-046: compaction threshold + steering timeout + guard escalation
 
 ---
 

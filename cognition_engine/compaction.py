@@ -9,7 +9,7 @@ intervention: context compaction.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from mlx_lm import generate
 
@@ -33,6 +33,8 @@ class ContextCompactor:
         self.anchor_text = ""  # Original task description, always kept
         # Set when a compaction actually increments compaction_count (for TASK-044 logging).
         self.last_compaction_strategy: Optional[str] = None
+        # Default CHI threshold used by `needs_compaction` (agent loop may apply grace logic).
+        self.compaction_chi_threshold: float = 0.65
 
     # ---------------------------------------------------------------------
     # Public API
@@ -45,6 +47,22 @@ class ContextCompactor:
         """Add a conversation turn."""
         self.conversation_turns.append({"role": role, "content": content})
 
+    def get_raw_turns(self) -> List[Tuple[str, str]]:
+        """
+        Return a normalized list of (role, content) pairs for model formatting.
+
+        Includes the anchor text as the first system turn (when present), followed by
+        the current conversation turns in order.
+        """
+        out: List[Tuple[str, str]] = []
+        if self.anchor_text:
+            out.append(("system", self.anchor_text))
+        for t in self.conversation_turns:
+            role = (t.get("role") or "assistant").strip().lower()
+            content = t.get("content") or ""
+            out.append((role, content))
+        return out
+
     def get_context_tokens(self) -> int:
         """Count total tokens in current context."""
         full_text = self._build_context()
@@ -55,7 +73,7 @@ class ContextCompactor:
         token_count = self.get_context_tokens()
         if token_count > self.max_context_tokens:
             return True
-        if chi_score is not None and chi_score < 0.5:
+        if chi_score is not None and chi_score < self.compaction_chi_threshold:
             return True
         return False
 

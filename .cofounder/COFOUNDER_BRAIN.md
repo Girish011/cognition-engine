@@ -238,6 +238,14 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   Agent now completes calculator task in 6 turns (was 20+ or never).
   stream_generate + EOS break partially works; truncation as backup.
   Anti-loop and no-tool guards catch degenerate model behavior.
+- TASK-045 FINAL FIX (12 iterations total). Three root causes, all fixed:
+  1. Generation: apply_chat_template for tokenization + stream_generate with
+     manual <|im_end|> (151645) break. eos_token_ids={151643} is wrong token.
+  2. Tool parsing: model emits [THINK]+[WRITE] in one response. Parser now
+     extracts action tool when think+action both present.
+  3. Subprocess: bare 'python' not on PATH. Regex-replace python→sys.executable.
+  Agent now completes calculator task in 3 turns reliably.
+  CHI stays above 0.86. No interventions needed on successful runs.
 
 ## KEY LEARNINGS (condensed)
 

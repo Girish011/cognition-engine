@@ -36,6 +36,13 @@ STEERING_ALPHA = 0.5
 STEERING_ACTIVATE_THRESHOLD = 0.7
 STEERING_DEACTIVATE_THRESHOLD = 0.8
 
+# ------------------------------------------------------------------
+# Compaction / escalation tuning (TASK-046)
+# ------------------------------------------------------------------
+COMPACTION_CHI_THRESHOLD = 0.65  # was 0.50
+COMPACTION_GRACE_TURNS = 3
+STEERING_TIMEOUT_TURNS = 5  # was 8 (lowered because tasks complete sooner now)
+
 # TASK-045: filenames mentioned in the task text (relative paths, common extensions)
 _EXPECTED_FILE_RE = re.compile(
     r"\b([A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|md|txt|toml|json|yaml|yml))\b"
@@ -139,6 +146,14 @@ class CognitionAgent:
         self.enable_compaction = bool(enable_compaction)
         self.turn_log = turn_log
 
+        # Resolve <|im_end|> token id once for manual EOS detection.
+        try:
+            self._im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        except Exception:
+            self._im_end_id = None
+        if self._im_end_id is None:
+            self._im_end_id = 151645  # Qwen2.5 fallback
+
         # Core systems
         self.memory = WorkingMemory(working_dir)
         self.session_mgr = SessionManager(working_dir)
@@ -168,6 +183,10 @@ class CognitionAgent:
         self.turn_count = 0
         # TASK-045F: degenerate turns with no parseable tool (e.g. empty / special tokens)
         self._consecutive_no_tool = 0
+        # TASK-046: compaction grace + escalation counters
+        self._turns_below_compaction = 0
+        self._steering_active_turns = 0
+        self._guard_fire_count = 0
 
         # Steering state (optional)
         self.steering = None
@@ -232,6 +251,7 @@ class CognitionAgent:
         executed_action_tool = False
         try:
             while self.turn_count < max_turns:
+                prompt_tokens_len: Optional[int] = None
                 # 1. Check if anchor needed
                 if self.chi_monitor.chi_history:
                     chi = self.chi_monitor.chi_history[-1]
@@ -239,40 +259,29 @@ class CognitionAgent:
                     if anchor:
                         self.compactor.add_turn("system", anchor)
 
-                # 2. Build context and generate (plain-text format that worked in Week 5)
-                context = self.compactor._build_context()
-                context += "\nAssistant: "
+                # 2. Build prompt tokens and generate (Qwen chat template)
+                prompt_tokens = self._build_prompt_tokens()
+                prompt_tokens_len = len(prompt_tokens)
 
-                eos_ids: set[int] = set()
-                eos_token_id = getattr(self.tokenizer, "eos_token_id", None)
-                if isinstance(eos_token_id, list):
-                    eos_ids.update(int(x) for x in eos_token_id if x is not None)
-                elif eos_token_id is not None:
-                    eos_ids.add(int(eos_token_id))
-
-                try:
-                    im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
-                    if im_end_id is not None:
-                        eos_ids.add(int(im_end_id))
-                except Exception:
-                    pass
-
-                response_chunks: List[str] = []
+                response_token_ids: List[int] = []
                 for gen_result in stream_generate(
                     self.model,
                     self.tokenizer,
-                    prompt=context,
+                    prompt=prompt_tokens,
                     max_tokens=800,
                 ):
-                    if gen_result.text:
-                        response_chunks.append(gen_result.text)
-                    # stream_generate yields a final record with finish_reason; break defensively.
-                    if getattr(gen_result, "finish_reason", None) == "stop":
+                    # Stop on <|im_end|> or a finished stream record.
+                    if gen_result.token == self._im_end_id:
                         break
-                    if eos_ids and gen_result.token in eos_ids:
+                    if getattr(gen_result, "finish_reason", None) is not None:
                         break
-                response = "".join(response_chunks)
-                response = _truncate_at_stop_strings(response, ["<|im_end|>", "<|im_start|>"])
+                    response_token_ids.append(int(gen_result.token))
+
+                response = self.tokenizer.decode(response_token_ids)
+                response = _truncate_at_stop_strings(
+                    response,
+                    ["<|im_end|>", "<|im_start|>", "<|endoftext|>"],
+                )
 
                 # Treat explicit [DONE] as completion. Do not rely on natural-language
                 # "task is complete" phrases, since those can appear prematurely and
@@ -326,6 +335,27 @@ class CognitionAgent:
                 else:
                     self._consecutive_no_tool = 0
 
+                # If the model is stuck emitting identical [THINK] repeatedly, do not
+                # record the same thought forever — force an action tool next.
+                if (
+                    len(tool_calls) == 1
+                    and tool_calls[0].get("tool") == "think"
+                    and self.tool_history
+                ):
+                    last_think = next(
+                        (t for t in reversed(self.tool_history) if t.get("tool") == "think"),
+                        None,
+                    )
+                    if last_think and last_think.get("thought") == tool_calls[0].get("thought"):
+                        self.compactor.add_turn("assistant", response)
+                        self.compactor.add_turn(
+                            "system",
+                            "You already noted that thought. Now take action: "
+                            "use exactly one of [WRITE], [READ], [EDIT], [EXEC], or [DONE].",
+                        )
+                        self.turn_count += 1
+                        continue
+
                 tool_results = []
 
                 for tool_call in tool_calls:
@@ -347,7 +377,8 @@ class CognitionAgent:
                     )
 
                 # 5. Update CHI
-                chi_result = self.chi_monitor.update(response, context + response)
+                prompt_text = self.tokenizer.decode(prompt_tokens)
+                chi_result = self.chi_monitor.update(response, prompt_text + response)
                 level = self.chi_monitor.get_intervention_level()
 
                 # 6. Display status
@@ -364,6 +395,7 @@ class CognitionAgent:
                         self.steering.set_alpha(alpha)
                         self.steering.activate()
                         self.steering_active = True
+                        self._steering_active_turns = 0
                         print(
                             f"[STEERING] ACTIVATED at turn {self.turn_count} — "
                             f"CHI={chi:.3f}, alpha={alpha:.3f}"
@@ -371,31 +403,76 @@ class CognitionAgent:
                     elif chi > STEERING_DEACTIVATE_THRESHOLD and self.steering_active:
                         self.steering.deactivate()
                         self.steering_active = False
+                        self._steering_active_turns = 0
                         print(f"[STEERING] Deactivated at turn {self.turn_count} — CHI={chi:.3f}")
                     elif self.steering_active:
                         self.steering.set_alpha(alpha)
+                        self._steering_active_turns += 1
 
                 self._print_status(chi, level, tool_calls)
 
                 # 7. Compaction (Level 3) — optional for TASK-044 A/B comparisons
+                # TASK-046 PART A: lower threshold + grace period counter
+                if chi < COMPACTION_CHI_THRESHOLD:
+                    self._turns_below_compaction += 1
+                else:
+                    self._turns_below_compaction = 0
+
                 c_before = self.compactor.compaction_count
                 if self.enable_compaction:
-                    if chi < 0.5 and self.compactor.needs_compaction(chi):
+                    # TASK-046 PART B/C: forced compaction triggers
+                    force_compaction = False
+                    force_reason = None
+
+                    # PART C — Guard-triggered compaction: if we needed 2 behavior nudges,
+                    # assume context is poisoned regardless of CHI.
+                    if self._guard_fire_count >= 2:
+                        force_compaction = True
+                        force_reason = f"guard_fire_count={self._guard_fire_count}"
+
+                    # PART B — Steering timeout escalation: if steering stayed active
+                    # too long and CHI still isn't recovering, force compaction.
+                    if (
+                        not force_compaction
+                        and self.enable_steering
+                        and self.steering_active
+                        and self._steering_active_turns >= STEERING_TIMEOUT_TURNS
+                        and chi < COMPACTION_CHI_THRESHOLD
+                    ):
+                        force_compaction = True
+                        force_reason = (
+                            f"steering_timeout={self._steering_active_turns} turns"
+                        )
+
+                    # PART A — Grace-based compaction: CHI below threshold for N turns.
+                    if (
+                        not force_compaction
+                        and self._turns_below_compaction >= COMPACTION_GRACE_TURNS
+                    ):
+                        force_compaction = True
+                        force_reason = (
+                            f"chi_below_{COMPACTION_CHI_THRESHOLD:.2f}"
+                            f" for {self._turns_below_compaction} turns"
+                        )
+
+                    if force_compaction:
                         print(
-                            f"[COMPACTION] Level 3 triggered at turn {self.turn_count} — "
-                            f"CHI={chi:.3f}"
+                            f"[COMPACTION] Forced at turn {self.turn_count} — "
+                            f"CHI={chi:.3f} ({force_reason})"
                         )
                         self.compactor.compact("auto")
-                    elif self.compactor.needs_compaction(chi):
-                        if chi < 0.3:
-                            self.compactor.compact("anchor_reset")
-                            print("  [COMPACTION: anchor reset]")
-                        elif chi < 0.5:
-                            self.compactor.compact("summarize")
-                            print("  [COMPACTION: summarize]")
-                        else:
-                            self.compactor.compact("trim")
-                            print("  [COMPACTION: trim]")
+                    else:
+                        # Default compaction policy (legacy ladder).
+                        if self.compactor.needs_compaction(chi):
+                            if chi < 0.3:
+                                self.compactor.compact("anchor_reset")
+                                print("  [COMPACTION: anchor reset]")
+                            elif chi < 0.5:
+                                self.compactor.compact("summarize")
+                                print("  [COMPACTION: summarize]")
+                            else:
+                                self.compactor.compact("trim")
+                                print("  [COMPACTION: trim]")
                     if chi < 0.3:
                         print(
                             "[LEVEL 4] Cloud escalation threshold (CHI < 0.3) — "
@@ -409,6 +486,17 @@ class CognitionAgent:
                     else None
                 )
 
+                if compaction_fired:
+                    # TASK-046 PART D — Post-compaction steering reset: let CHI re-evaluate
+                    # on the fresh context before re-engaging steering.
+                    self._turns_below_compaction = 0
+                    self._guard_fire_count = 0
+                    self._steering_active_turns = 0
+                    if self.enable_steering and self.steering is not None and self.steering_active:
+                        self.steering.deactivate()
+                        self.steering_active = False
+                        print("[STEERING] Reset: deactivated after compaction.")
+
                 if self.turn_log is not None:
                     self._append_turn_log(
                         response=response,
@@ -417,6 +505,7 @@ class CognitionAgent:
                         tool_calls=tool_calls,
                         compaction_fired=compaction_fired,
                         compaction_strategy=strat,
+                        prompt_tokens_len=prompt_tokens_len,
                     )
 
                 # TASK-045F: no parseable tool for several turns (degenerate output loop)
@@ -432,6 +521,8 @@ class CognitionAgent:
                         "Do not output empty responses.",
                     )
                     self._consecutive_no_tool = 0
+                    # TASK-046 PART C: count guard fires for compaction escalation.
+                    self._guard_fire_count += 1
 
                 # TASK-045: heuristic completion (files from task + recent successful execute)
                 if executed_action_tool and self._check_task_completion():
@@ -459,6 +550,8 @@ class CognitionAgent:
                             "You are repeating the same action. If the task is complete, "
                             "say [DONE].",
                         )
+                        # TASK-046 PART C: count anti-loop guard fires.
+                        self._guard_fire_count += 1
 
                 self.turn_count += 1
         except KeyboardInterrupt:
@@ -511,6 +604,43 @@ class CognitionAgent:
 
             self._print_summary()
 
+    def _format_context_for_model(self, context_turns: List[Tuple[str, str]]) -> str:
+        """
+        Convert compactor's (role, content) turns into Qwen chat template.
+
+        Plain text:    System: You are a coding agent...
+        Chat template: <|im_start|>system\\nYou are a coding agent...<|im_end|>
+        """
+        formatted = ""
+        for role, content in context_turns:
+            r = (role or "").strip()
+            if r in ("system", "System"):
+                chat_role = "system"
+            elif r in ("user", "User", "human"):
+                chat_role = "user"
+            elif r in ("assistant", "Assistant"):
+                chat_role = "assistant"
+            else:
+                chat_role = "user"
+            formatted += f"<|im_start|>{chat_role}\n{content}<|im_end|>\n"
+        formatted += "<|im_start|>assistant\n"
+        return formatted
+
+    def _build_prompt_tokens(self) -> List[int]:
+        """Build tokenized prompt using Qwen chat template."""
+        messages: List[Dict[str, str]] = []
+        for role, content in self.compactor.get_raw_turns():
+            r = (role or "user").strip().lower()
+            if r not in ("system", "user", "assistant"):
+                r = "user"
+            messages.append({"role": r, "content": content})
+        token_ids = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+        )
+        return list(token_ids)
+
     def _append_turn_log(
         self,
         *,
@@ -520,6 +650,7 @@ class CognitionAgent:
         tool_calls: List[Dict],
         compaction_fired: bool,
         compaction_strategy: Optional[str],
+        prompt_tokens_len: Optional[int],
     ) -> None:
         """Append one TASK-044-style turn record (requires turn_log list in __init__)."""
         if self.turn_log is None:
@@ -534,7 +665,18 @@ class CognitionAgent:
             chi_score = 0.0
             chi_raw = 0.0
 
-        tool_used = tool_calls[0].get("tool", "none") if tool_calls else "none"
+        # Prefer an action tool if the model emitted think+action in one turn.
+        tool_used = "none"
+        if tool_calls:
+            tool_used = next(
+                (
+                    tc.get("tool")
+                    for tc in tool_calls
+                    if tc.get("tool") in {"read", "write", "edit", "execute", "done"}
+                ),
+                tool_calls[0].get("tool", "none"),
+            )
+
         exec_command = None
         exec_exit_code = None
         if tool_used == "execute":
@@ -545,7 +687,11 @@ class CognitionAgent:
                     exec_exit_code = h.get("exit_code")
                     break
         resp_tokens = len(self.tokenizer.encode(response))
-        ctx_tokens = self.compactor.get_context_tokens()
+        ctx_tokens = (
+            int(prompt_tokens_len)
+            if prompt_tokens_len is not None
+            else self.compactor.get_context_tokens()
+        )
 
         row = {
                 "turn": self.turn_count,
@@ -593,7 +739,23 @@ class CognitionAgent:
         # execute it as a tool call.
         if parsed.get("tool") == "done":
             return []
-        # Exactly one tool call per response.
+
+        # If the model emitted [THINK] and then also emitted an action tool in the
+        # same response, prefer the action tool (but still record the think).
+        if parsed.get("tool") == "think":
+            thought = parsed.get("thought") or ""
+            cut = response.find(thought)
+            if cut != -1:
+                remainder = response[cut + len(thought) :]
+            else:
+                remainder = response
+            second = parse_tool_call(remainder)
+            if second and second.get("tool") in {"read", "write", "edit", "execute", "done"}:
+                # Return both: we will "execute" think (records to memory) then action.
+                if second.get("tool") == "done":
+                    return [parsed]
+                return [parsed, second]
+
         return [parsed]
 
     def _execute_tool(self, tool_call: Dict) -> Tuple[str, Optional[int]]:
@@ -657,7 +819,9 @@ class CognitionAgent:
         """Write content to a file."""
         full_path = os.path.join(self.working_dir, path)
         try:
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            d = os.path.dirname(full_path)
+            if d:
+                os.makedirs(d, exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(content)
             self.anchor_mgr.add_file(path)
@@ -684,6 +848,10 @@ class CognitionAgent:
     def _tool_execute(self, command: str) -> Tuple[str, Optional[int]]:
         """Execute a shell command with user approval. Returns (message, exit_code)."""
         cmd = strip_chat_template_artifacts(command)
+        # Normalize bare `python` / `python3` to the actual interpreter so subprocess
+        # finds the venv python regardless of PATH.
+        python_exe = sys.executable
+        cmd = re.sub(r"\bpython3?\b", python_exe, cmd)
         # TASK-045G: bare `pytest` may not be on PATH in the subprocess; use venv python.
         stripped = cmd.strip()
         if stripped in ("pytest", "pytest ."):
