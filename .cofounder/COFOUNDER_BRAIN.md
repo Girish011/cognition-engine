@@ -224,6 +224,20 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   monitoring MORE valuable (model runs longer but still degrades cognitively).
   TODO (Week 8-9): test CHI accuracy with TurboQuant-compressed KV cache.
   Potential demo story: "TurboQuant extends the conversation. We keep it coherent."
+- TASK-045 root cause: <|im_end|> not set as stop token in mlx_lm.generate().
+  Every response generated hundreds of garbage tokens past the real end,
+  poisoning context and leaking chat template tokens into subprocess commands.
+  Fix: add eos_token as stop string. CHI jumped 0.790→0.952, agent completes
+  calculator task in 6 turns instead of 20. All previous TASK-045 sub-issues
+  (PATH, heuristic false-positive, degenerate loops) were symptoms of this.
+- TASK-045 COMPLETE (9 iterations). Root causes found and fixed:
+  1. <|im_end|> not stripped from tool arguments → shell syntax errors
+  2. No EOS stop in generate → 800 tokens of garbage per turn
+  3. Heuristic false-positive on pip install → filtered to test commands only
+  4. [DONE] accepted without test evidence → validation guard added
+  Agent now completes calculator task in 6 turns (was 20+ or never).
+  stream_generate + EOS break partially works; truncation as backup.
+  Anti-loop and no-tool guards catch degenerate model behavior.
 
 ## KEY LEARNINGS (condensed)
 
