@@ -741,3 +741,39 @@ A major limitation of traditional activation steering is that it is "always on".
      - `[NO-TOOL-GUARD] ... injecting recovery prompt.` and/or the anti-loop system injection
    - Then verify the next compaction is forced with:
      - `[COMPACTION] Forced ... (guard_fire_count=2)`
+
+## 2026-04-02 (Week 8 — TASK-047: Duplicate-write guard + 3-mode comparison rerun)
+
+- Implemented **duplicate-write guard** in `cognition_engine/agent.py`:
+  - Tracks `self._last_write_hash[path] = md5(content)` per session.
+  - On identical rewrites, injects a **system correction** (“already contains that exact content… Move to the next step”) and **skips recording** the write in `tool_history`.
+  - Important fix: for duplicate rewrites, we **do not append the assistant response** to the compactor context (prevents context balloon + long generation stalls).
+  - Resets guard state after compaction fires via `self._last_write_hash.clear()`.
+
+- Updated `scripts/test_steering_agent.py` for TASK-047:
+  - `--task` already existed; kept it and changed default output naming to `data/task047_{calc|conv}_{mode}.json`.
+  - Payload now records `protocol="TASK-047"` and stores the actual `task` string used.
+  - Metrics now handle both calculator and converter tasks (adds `converter_py_exists` / `test_converter_py_exists` and uses task-sensitive completion bar).
+
+- Ran 6 total modes (calculator: 10 turns budget; converter: 20 turns budget). Outputs saved:
+  - `data/task047_calc_{baseline|steering|full_ladder}.json`
+  - `data/task047_conv_{baseline|steering|full_ladder}.json`
+
+### Results summary (metrics)
+
+- **Calculator (all 3 modes identical)**
+  - Completed via heuristic completion in **3 turns**
+  - `pytest_executed=true`
+  - `chi_min=0.8602`, `chi_final=0.8793`
+  - `compaction_firings_total=0`, steering never activated
+
+- **Converter (all 3 modes identical)**
+  - Completed via heuristic completion in **4 turns**
+  - `converter_py_exists=true`, `test_converter_py_exists=true`, `pytest_executed=true`
+  - `chi_min=0.8561`, `chi_final=0.8838`
+  - `compaction_firings_total=0`, steering never activated
+
+- Verified files exist in all converter run dirs:
+  - `/tmp/task047_conv_base`: `converter.py`, `test_converter.py` ✅
+  - `/tmp/task047_conv_steer`: `converter.py`, `test_converter.py` ✅
+  - `/tmp/task047_conv_full`: `converter.py`, `test_converter.py` ✅

@@ -100,10 +100,19 @@ def compute_metrics(
     compaction_count: int,
     chi_min: float | None,
     chi_final: float | None,
+    task: str,
 ) -> dict[str, Any]:
     wd = Path(working_dir)
+    task_l = (task or "").lower()
+    is_calc = ("calculator.py" in task_l) or ("calculator" in task_l)
+    is_conv = ("converter.py" in task_l) or ("temperatureconverter" in task_l) or (
+        "temperature converter" in task_l
+    )
+
     has_calc = (wd / "calculator.py").is_file()
-    has_test = (wd / "test_calculator.py").is_file()
+    has_calc_test = (wd / "test_calculator.py").is_file()
+    has_conv = (wd / "converter.py").is_file()
+    has_conv_test = (wd / "test_converter.py").is_file()
     pytest_ran = _pytest_ran(tool_history)
     reached_done = any(row.get("tool_used") == "done" for row in turns)
 
@@ -112,7 +121,7 @@ def compute_metrics(
     turns_to_completion = None
 
     # Preferred: use per-turn execute metadata when present.
-    if has_calc and has_test:
+    if (is_calc and has_calc and has_calc_test) or (is_conv and has_conv and has_conv_test):
         for row in turns:
             if row.get("tool_used") != "execute":
                 continue
@@ -124,7 +133,10 @@ def compute_metrics(
                 break
 
     # Fallback: infer completion turn by mapping tool_history executes to turn executes.
-    if turns_to_completion is None and has_calc and has_test:
+    if (
+        turns_to_completion is None
+        and ((is_calc and has_calc and has_calc_test) or (is_conv and has_conv and has_conv_test))
+    ):
         execute_success_index = None  # 1-based among execute tool calls
         exec_seen = 0
         for call in tool_history:
@@ -155,12 +167,21 @@ def compute_metrics(
 
     turns_to_any_completion = turns_to_done if turns_to_done is not None else turns_to_completion
 
-    minimum_bar = bool(has_calc and has_test and pytest_ran and (reached_done or heuristic_completed))
+    if is_conv and not is_calc:
+        minimum_bar = bool(
+            has_conv and has_conv_test and pytest_ran and (reached_done or heuristic_completed)
+        )
+    else:
+        minimum_bar = bool(
+            has_calc and has_calc_test and pytest_ran and (reached_done or heuristic_completed)
+        )
 
     return {
         "task_completed_minimum_bar": minimum_bar,
         "calculator_py_exists": has_calc,
-        "test_calculator_py_exists": has_test,
+        "test_calculator_py_exists": has_calc_test,
+        "converter_py_exists": has_conv,
+        "test_converter_py_exists": has_conv_test,
         "pytest_executed": pytest_ran,
         "reached_explicit_done": reached_done,
         "reached_heuristic_completion": heuristic_completed,
@@ -244,10 +265,11 @@ def run_mode(
         compaction_count=agent.compactor.compaction_count,
         chi_min=chi_min,
         chi_final=chi_final,
+        task=task,
     )
 
     payload = {
-        "protocol": "TASK-044" if task == TASK044_TASK else "TASK-047",
+        "protocol": "TASK-047",
         "mode": mode,
         "model": model_id,
         "working_dir": str(wd_path.resolve()),
@@ -433,11 +455,9 @@ def main() -> None:
     if args.output_json:
         out = _abs(root, args.output_json)
     else:
-        if args.task != TASK044_TASK:
-            task_key = "calc" if "calculator" in args.task.lower() else "conv"
-            out = _abs(root, f"data/task047_{task_key}_{args.mode}.json")
-        else:
-            out = _abs(root, MODE_TO_JSON[args.mode])
+        # TASK-047: output naming based on task type.
+        task_key = "calc" if "calculator" in args.task.lower() else "conv"
+        out = _abs(root, f"data/task047_{task_key}_{args.mode}.json")
 
     run_mode(
         mode=args.mode,

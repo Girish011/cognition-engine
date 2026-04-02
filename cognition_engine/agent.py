@@ -379,9 +379,8 @@ class CognitionAgent:
                         executed_action_tool = True
 
                 if duplicate_write_interrupt:
-                    # Add assistant response so the model can see what it did, but do not
-                    # update CHI/compaction based on a redundant write loop.
-                    self.compactor.add_turn("assistant", response)
+                    # Do not add the assistant response to context/history for an
+                    # identical rewrite loop; keep context clean and move on.
                     self.turn_count += 1
                     continue
 
