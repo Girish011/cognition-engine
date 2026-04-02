@@ -156,24 +156,112 @@ Git: TASK-046: compaction threshold + steering timeout + guard escalation
 ---
 
 ### TASK-047: Re-run TASK-044 with Fixes (The Real Capstone)
-**Status:** ⬜ TODO
-**Do:** Re-run all 3 modes with TASK-045 + TASK-046 fixes
+Add the duplicate-write guard first. Without it, all three converter runs will produce the same 15-turn rewrite loop. Here's the full plan — execute in order.
 
-Same protocol as TASK-044, same calculator task, 3 modes:
-- baseline (no steering, no compaction)
-- steering (Level 2 only)
-- full_ladder (Level 2 + Level 3)
+**PART 1: Duplicate-write guard (agent.py)**
 
-**Expected improvement:** Baseline should complete in <10 turns (heuristic
-[DONE] detection). Steering should complete similarly. Full ladder should
-show compaction firing when steering fails, with context reset.
+Add `self._last_write_hash = {}` in `__init__`.
 
-**This is the graph you show in the demo video.**
+After `_tool_write` succeeds, before recording in tool_history:
 
-**Output:** Same as TASK-044 — comparison JSON + PNG + report.
+```python
+import hashlib
 
-**Time:** 2-3 hours (3 runs + analysis)
-**Git:** `git commit -m "TASK-047: re-run integration test with completion + compaction fixes"`
+def _content_hash(self, content: str) -> str:
+    return hashlib.md5(content.encode()).hexdigest()
+
+# In the write execution path, after file is written:
+content_hash = self._content_hash(content)
+if path in self._last_write_hash and self._last_write_hash[path] == content_hash:
+    # Identical rewrite — don't record, inject correction
+    self.compactor.add_turn("system",
+        f"{path} already contains that exact content. "
+        f"Do NOT rewrite it. Move to the next step of the task.")
+    self._last_write_hash[path] = content_hash
+    continue  # skip to next turn
+self._last_write_hash[path] = content_hash
+```
+
+Also reset `_last_write_hash` after compaction fires (in the compaction block):
+
+```python
+self._last_write_hash.clear()
+```
+
+**PART 2: Update test_steering_agent.py for TASK-047**
+
+Add `--task` CLI argument if not already present. Add output file naming based on task type:
+
+```python
+# Detect task type for output naming
+task_key = "calc" if "calculator" in args.task.lower() else "conv"
+output_path = f"data/task047_{task_key}_{args.mode}.json"
+```
+
+**PART 3: Run all 6 (copy-paste block)**
+
+After implementing parts 1-2:
+
+```bash
+cd /Users/girish11/cognition-engine
+
+CALC_TASK="Create a Python file called calculator.py with a Calculator class that has add, subtract, multiply, and divide methods. Then create test_calculator.py with tests for each method. Run the tests to verify they pass."
+
+CONV_TASK="Create a Python file called converter.py with a TemperatureConverter class that has celsius_to_fahrenheit, fahrenheit_to_celsius, celsius_to_kelvin, and kelvin_to_celsius methods. Each method should handle edge cases (absolute zero check for kelvin methods - raise ValueError if result would be below 0K). Then create test_converter.py with at least 8 tests covering normal conversions and edge cases. Run the tests to verify they pass."
+
+echo "=== CALCULATOR RUNS ==="
+
+.venv/bin/python -u scripts/test_steering_agent.py \
+  --mode baseline --dir /tmp/task047_calc_base --max-turns 10 \
+  --task "$CALC_TASK" --auto-approve
+echo "=== calc baseline done ==="
+
+.venv/bin/python -u scripts/test_steering_agent.py \
+  --mode steering --dir /tmp/task047_calc_steer --max-turns 10 \
+  --task "$CALC_TASK" --auto-approve
+echo "=== calc steering done ==="
+
+.venv/bin/python -u scripts/test_steering_agent.py \
+  --mode full_ladder --dir /tmp/task047_calc_full --max-turns 10 \
+  --task "$CALC_TASK" --auto-approve
+echo "=== calc full_ladder done ==="
+
+echo "=== COOLDOWN 120s ==="
+sleep 120
+
+echo "=== CONVERTER RUNS ==="
+
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode baseline --dir /tmp/task047_conv_base --max-turns 20 \
+  --task "$CONV_TASK" --auto-approve
+echo "=== conv baseline done ==="
+
+sleep 120
+
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode steering --dir /tmp/task047_conv_steer --max-turns 20 \
+  --task "$CONV_TASK" --auto-approve
+echo "=== conv steering done ==="
+
+sleep 120
+
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode full_ladder --dir /tmp/task047_conv_full --max-turns 20 \
+  --task "$CONV_TASK" --auto-approve
+echo "=== conv full_ladder done ==="
+```
+
+**PART 4: What to paste back**
+
+After all 6 complete, paste:
+- Terminal output for all 6 runs
+- The 6 JSON files (or just the metrics blocks from each)
+- Whether converter.py and test_converter.py exist in each converter run dir
+
+I'll analyze the results, generate the comparison graph spec, and write the report.
+
+**Git plan:** Commit the duplicate-write guard as `TASK-047-prep: duplicate-write guard`, then commit results as `TASK-047: three-mode comparison on calculator + converter`. Two commits keeps it clean.
+
 
 ---
 

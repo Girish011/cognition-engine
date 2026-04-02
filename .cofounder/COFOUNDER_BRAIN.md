@@ -246,6 +246,14 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   3. Subprocess: bare 'python' not on PATH. Regex-replace python→sys.executable.
   Agent now completes calculator task in 3 turns reliably.
   CHI stays above 0.86. No interventions needed on successful runs.
+- 2026-04-02: Dupoux/LeCun/Malik paper "Why AI systems don't learn" (arXiv 2603.15381)
+  proposes System A (observation) + System B (action) + System M (meta-control) architecture.
+  System M monitors epistemic meta-states (prediction error, uncertainty) and switches 
+  operating modes. Our CHI monitor + intervention ladder IS a practical System M for 
+  coding agents. Paper validates our architecture from cognitive science angle.
+  Strategic: use their vocabulary in Phase 3 materials but position as independent work.
+  Don't subordinate to their framework — we built working code, they wrote theory.
+  Their Evo/Devo bilevel optimization maps to our LoRA crystallization (Phase 4).
 
 ## KEY LEARNINGS (condensed)
 
