@@ -187,6 +187,7 @@ def run_mode(
     model_id: str,
     output_json: Path,
     auto_approve: bool,
+    task: str,
 ) -> dict[str, Any]:
     root = _repo_root()
     wd_path = Path(working_dir)
@@ -221,7 +222,7 @@ def run_mode(
     agent = CognitionAgent(
         model,
         tokenizer,
-        TASK044_TASK,
+        task,
         working_dir=str(wd_path),
         auto_approve=auto_approve,
         enable_steering=enable_steering,
@@ -246,11 +247,11 @@ def run_mode(
     )
 
     payload = {
-        "protocol": "TASK-044",
+        "protocol": "TASK-044" if task == TASK044_TASK else "TASK-047",
         "mode": mode,
         "model": model_id,
         "working_dir": str(wd_path.resolve()),
-        "task": TASK044_TASK,
+        "task": task,
         "max_turns": max_turns,
         "enable_steering": enable_steering,
         "enable_compaction": enable_compaction,
@@ -364,6 +365,11 @@ def main() -> None:
     parser.add_argument("--max-turns", type=int, default=20)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument(
+        "--task",
+        default=TASK044_TASK,
+        help="Override the task prompt used for the agent run",
+    )
+    parser.add_argument(
         "--output-json",
         default=None,
         help="Override output path (default: data/task044_{mode}.json)",
@@ -424,11 +430,14 @@ def main() -> None:
             "--plot-only (or --plot-comparison with no --dir)."
         )
 
-    out = (
-        _abs(root, args.output_json)
-        if args.output_json
-        else _abs(root, MODE_TO_JSON[args.mode])
-    )
+    if args.output_json:
+        out = _abs(root, args.output_json)
+    else:
+        if args.task != TASK044_TASK:
+            task_key = "calc" if "calculator" in args.task.lower() else "conv"
+            out = _abs(root, f"data/task047_{task_key}_{args.mode}.json")
+        else:
+            out = _abs(root, MODE_TO_JSON[args.mode])
 
     run_mode(
         mode=args.mode,
@@ -437,6 +446,7 @@ def main() -> None:
         model_id=args.model,
         output_json=out,
         auto_approve=args.auto_approve,
+        task=args.task,
     )
 
     if args.plot_comparison:

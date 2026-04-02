@@ -7,6 +7,7 @@ and monitors its own cognitive health throughout.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -181,6 +182,8 @@ class CognitionAgent:
         # Tool call history
         self.tool_history: List[Dict] = []
         self.turn_count = 0
+        # TASK-047: duplicate-write guard (path -> md5(content))
+        self._last_write_hash: Dict[str, str] = {}
         # TASK-045F: degenerate turns with no parseable tool (e.g. empty / special tokens)
         self._consecutive_no_tool = 0
         # TASK-046: compaction grace + escalation counters
@@ -357,16 +360,30 @@ class CognitionAgent:
                         continue
 
                 tool_results = []
+                duplicate_write_interrupt = False
 
                 for tool_call in tool_calls:
                     result, exec_exit = self._execute_tool(tool_call)
                     tool_results.append(result)
-                    record = dict(tool_call)
-                    if tool_call.get("tool") == "execute" and exec_exit is not None:
-                        record["exit_code"] = exec_exit
-                    self.tool_history.append(record)
+                    if tool_call.get("_duplicate_write"):
+                        # Skip recording/tool-results churn. Injected system correction
+                        # already tells the model to move on; jump to next turn.
+                        duplicate_write_interrupt = True
+                        break
+                    if not tool_call.get("_skip_tool_history"):
+                        record = dict(tool_call)
+                        if tool_call.get("tool") == "execute" and exec_exit is not None:
+                            record["exit_code"] = exec_exit
+                        self.tool_history.append(record)
                     if tool_call.get("tool") in {"read", "write", "edit", "execute"}:
                         executed_action_tool = True
+
+                if duplicate_write_interrupt:
+                    # Add assistant response so the model can see what it did, but do not
+                    # update CHI/compaction based on a redundant write loop.
+                    self.compactor.add_turn("assistant", response)
+                    self.turn_count += 1
+                    continue
 
                 # 4. Add to conversation
                 self.compactor.add_turn("assistant", response)
@@ -492,6 +509,8 @@ class CognitionAgent:
                     self._turns_below_compaction = 0
                     self._guard_fire_count = 0
                     self._steering_active_turns = 0
+                    # TASK-047: compaction changes context; reset duplicate-write state.
+                    self._last_write_hash.clear()
                     if self.enable_steering and self.steering is not None and self.steering_active:
                         self.steering.deactivate()
                         self.steering_active = False
@@ -768,10 +787,25 @@ class CognitionAgent:
         if tool == "read":
             return self._tool_read(strip_chat_template_artifacts(tool_call["path"])), None
         if tool == "write":
-            result = self._tool_write(
-                strip_chat_template_artifacts(tool_call["path"]),
-                strip_chat_template_artifacts(tool_call["content"]),
-            )
+            path = strip_chat_template_artifacts(tool_call["path"])
+            content = strip_chat_template_artifacts(tool_call["content"])
+            result = self._tool_write(path, content)
+
+            # TASK-047: duplicate-write guard. If the exact same content was already
+            # written to this path in this session, do not record it and tell the
+            # model to move on.
+            content_hash = self._content_hash(content)
+            if path in self._last_write_hash and self._last_write_hash[path] == content_hash:
+                self.compactor.add_turn(
+                    "system",
+                    f"{path} already contains that exact content. "
+                    f"Do NOT rewrite it. Move to the next step of the task.",
+                )
+                self._last_write_hash[path] = content_hash
+                tool_call["_duplicate_write"] = True
+                tool_call["_skip_tool_history"] = True
+                return "[DUPLICATE WRITE — skipped recording]", None
+            self._last_write_hash[path] = content_hash
             # Record file purpose in working memory.
             preview = tool_call["content"][:100]
             self.memory.add_note(
@@ -881,6 +915,9 @@ class CognitionAgent:
             return f"[EXEC `{cmd}` → TIMEOUT (30s)]", None
         except Exception as e:  # noqa: BLE001
             return f"[EXEC ERROR: {e}]", None
+
+    def _content_hash(self, content: str) -> str:
+        return hashlib.md5(content.encode()).hexdigest()
 
     # ------------------------------------------------------------------
     # Helpers
