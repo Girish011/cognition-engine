@@ -254,6 +254,16 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   Strategic: use their vocabulary in Phase 3 materials but position as independent work.
   Don't subordinate to their framework — we built working code, they wrote theory.
   Their Evo/Devo bilevel optimization maps to our LoRA crystallization (Phase 4).
+- TASK-047 COMPLETE. All 6 runs pass (calculator 3 turns, converter 3-4 turns).
+  All three modes identical — steering/compaction never fire because model 
+  completes before degradation. Generation fixes (chat template, EOS, 
+  think+action, python normalization) eliminated most observed degradation.
+  Previous "degradation" was largely garbage token generation, not cognitive 
+  decline. Real degradation needs 15+ turn tasks to manifest.
+  Demo needs a longer task to exercise the intervention ladder.
+- REVISED DEMO NARRATIVE: "Infrastructure makes local models reliable. 
+  Simple tasks complete in 3 turns. Complex tasks hit degradation — 
+  the ladder catches it." Need a 15+ turn task for the second half.
 
 ## KEY LEARNINGS (condensed)
 
@@ -308,3 +318,9 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   `--plot-comparison` to build `data/task044_comparison.png` and
   `data/task044_report.md`. **Outcome:** run the three commands and record results
   in the report — the harness is the deliverable; measured success is model-dependent.
+- 2026-04-04: Previous "degradation" was mostly garbage token generation
+  (no EOS stop), not genuine cognitive decline. With proper chat template
+  + EOS stopping, 7B model completes 2-file tasks in 3-4 turns with no
+  degradation. Real degradation needs 15+ turn tasks or test-debug cycles.
+- 2026-04-04: eos_token_ids={151643} (<|endoftext|>) but model emits
+  151645 (<|im_end|>). Must check both in stream_generate loop.

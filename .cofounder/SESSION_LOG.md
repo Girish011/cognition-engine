@@ -759,6 +759,22 @@ A major limitation of traditional activation steering is that it is "always on".
   - `data/task047_calc_{baseline|steering|full_ladder}.json`
   - `data/task047_conv_{baseline|steering|full_ladder}.json`
 
+2026-04-04 (Week 8 — TASK-045/046/047 session)
+* TASK-045 FINAL: 12 iterations. Root causes: (1) no EOS stop token — 
+  eos_token_ids={151643} wrong, need manual 151645 check in stream_generate,
+  (2) think+action in single response — parser extracted think only,
+  (3) bare python not on PATH — regex to sys.executable,
+  (4) exec+done packed — parser preferred done over exec.
+  Agent completes calculator in 3 turns, converter in 4 turns.
+* TASK-046: Compaction threshold 0.65, grace 3 turns, steering timeout 5,
+  guard-triggered compaction at 2 fires. Mechanically works but never
+  triggers on tasks that complete in 3-4 turns.
+* TASK-047: 6 runs (calc×3 + conv×3). All identical across modes.
+  No degradation observed — model completes before inflection point.
+* TASK-047B: Expense tracker baseline. Files created by turn 3,
+  pytest fails exit 1, model cannot debug. CHI 0.636. Blocked on
+  test debugging capability of 7B model.
+
 ### Results summary (metrics)
 
 - **Calculator (all 3 modes identical)**

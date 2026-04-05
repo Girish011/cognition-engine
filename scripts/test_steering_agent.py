@@ -33,6 +33,22 @@ TASK044_TASK = (
     "Run the tests to verify they pass."
 )
 
+EXPENSE_TASK = (
+    "Build a command-line expense tracker. "
+    "Step 1: Create models.py with an Expense dataclass (amount: float, "
+    "category: str, date: str, description: str) and an ExpenseTracker class "
+    "with methods: add_expense(expense), get_expenses_by_category(category), "
+    "get_total(), get_monthly_summary(month_str). ExpenseTracker should store "
+    "expenses in a list and save/load from expenses.json. "
+    "Step 2: Create cli.py using argparse with subcommands: "
+    "add --amount --category --description, list --category (optional filter), "
+    "summary --month. cli.py should import and use ExpenseTracker from models.py. "
+    "Step 3: Create test_models.py with at least 6 tests covering "
+    "add_expense, get_expenses_by_category, get_total, get_monthly_summary, "
+    "empty tracker edge case, and save/load round-trip. "
+    "Step 4: Run the tests with pytest to verify they pass."
+)
+
 DEFAULT_MODEL = "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
 
 MODE_TO_JSON = {
@@ -108,11 +124,15 @@ def compute_metrics(
     is_conv = ("converter.py" in task_l) or ("temperatureconverter" in task_l) or (
         "temperature converter" in task_l
     )
+    is_expense = "expense tracker" in task_l
 
     has_calc = (wd / "calculator.py").is_file()
     has_calc_test = (wd / "test_calculator.py").is_file()
     has_conv = (wd / "converter.py").is_file()
     has_conv_test = (wd / "test_converter.py").is_file()
+    has_models = (wd / "models.py").is_file()
+    has_cli = (wd / "cli.py").is_file()
+    has_test_models = (wd / "test_models.py").is_file()
     pytest_ran = _pytest_ran(tool_history)
     reached_done = any(row.get("tool_used") == "done" for row in turns)
 
@@ -120,8 +140,16 @@ def compute_metrics(
     heuristic_completed = False
     turns_to_completion = None
 
+    files_ready = False
+    if is_calc:
+        files_ready = has_calc and has_calc_test
+    elif is_conv:
+        files_ready = has_conv and has_conv_test
+    elif is_expense:
+        files_ready = has_models and has_cli and has_test_models
+
     # Preferred: use per-turn execute metadata when present.
-    if (is_calc and has_calc and has_calc_test) or (is_conv and has_conv and has_conv_test):
+    if files_ready:
         for row in turns:
             if row.get("tool_used") != "execute":
                 continue
@@ -133,10 +161,7 @@ def compute_metrics(
                 break
 
     # Fallback: infer completion turn by mapping tool_history executes to turn executes.
-    if (
-        turns_to_completion is None
-        and ((is_calc and has_calc and has_calc_test) or (is_conv and has_conv and has_conv_test))
-    ):
+    if turns_to_completion is None and files_ready:
         execute_success_index = None  # 1-based among execute tool calls
         exec_seen = 0
         for call in tool_history:
@@ -167,14 +192,24 @@ def compute_metrics(
 
     turns_to_any_completion = turns_to_done if turns_to_done is not None else turns_to_completion
 
-    if is_conv and not is_calc:
-        minimum_bar = bool(
-            has_conv and has_conv_test and pytest_ran and (reached_done or heuristic_completed)
-        )
-    else:
+    if is_calc:
         minimum_bar = bool(
             has_calc and has_calc_test and pytest_ran and (reached_done or heuristic_completed)
         )
+    elif is_conv:
+        minimum_bar = bool(
+            has_conv and has_conv_test and pytest_ran and (reached_done or heuristic_completed)
+        )
+    elif is_expense:
+        minimum_bar = bool(
+            has_models
+            and has_cli
+            and has_test_models
+            and pytest_ran
+            and (reached_done or heuristic_completed)
+        )
+    else:
+        minimum_bar = False
 
     return {
         "task_completed_minimum_bar": minimum_bar,
@@ -182,6 +217,9 @@ def compute_metrics(
         "test_calculator_py_exists": has_calc_test,
         "converter_py_exists": has_conv,
         "test_converter_py_exists": has_conv_test,
+        "models_py_exists": has_models,
+        "cli_py_exists": has_cli,
+        "test_models_py_exists": has_test_models,
         "pytest_executed": pytest_ran,
         "reached_explicit_done": reached_done,
         "reached_heuristic_completion": heuristic_completed,
@@ -456,7 +494,13 @@ def main() -> None:
         out = _abs(root, args.output_json)
     else:
         # TASK-047: output naming based on task type.
-        task_key = "calc" if "calculator" in args.task.lower() else "conv"
+        tl = args.task.lower()
+        if "calculator" in tl:
+            task_key = "calc"
+        elif "expense tracker" in tl:
+            task_key = "expense"
+        else:
+            task_key = "conv"
         out = _abs(root, f"data/task047_{task_key}_{args.mode}.json")
 
     run_mode(

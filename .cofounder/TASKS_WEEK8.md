@@ -261,7 +261,113 @@ After all 6 complete, paste:
 I'll analyze the results, generate the comparison graph spec, and write the report.
 
 **Git plan:** Commit the duplicate-write guard as `TASK-047-prep: duplicate-write guard`, then commit results as `TASK-047: three-mode comparison on calculator + converter`. Two commits keeps it clean.
+****
 
+Here's the plan. Two parts: prep the task, then run it.
+
+**TASK-047B: Long-Form Demo Task (Expense Tracker)**
+
+**Part A — Define the task string and update harness (30 min)**
+
+1. Add this task constant to `scripts/test_steering_agent.py`:
+
+```python
+EXPENSE_TASK = (
+    "Build a command-line expense tracker. "
+    "Step 1: Create models.py with an Expense dataclass (amount: float, "
+    "category: str, date: str, description: str) and an ExpenseTracker class "
+    "with methods: add_expense(expense), get_expenses_by_category(category), "
+    "get_total(), get_monthly_summary(month_str). ExpenseTracker should store "
+    "expenses in a list and save/load from expenses.json. "
+    "Step 2: Create cli.py using argparse with subcommands: "
+    "add --amount --category --description, list --category (optional filter), "
+    "summary --month. cli.py should import and use ExpenseTracker from models.py. "
+    "Step 3: Create test_models.py with at least 6 tests covering "
+    "add_expense, get_expenses_by_category, get_total, get_monthly_summary, "
+    "empty tracker edge case, and save/load round-trip. "
+    "Step 4: Run the tests with pytest to verify they pass."
+)
+```
+
+2. Update `_extract_expected_files()` in `agent.py` — verify it can parse `models.py`, `cli.py`, `test_models.py` from this task string. If it uses regex for `.py` filenames, it should already work. Test:
+
+```bash
+.venv/bin/python3 -c "
+from cognition_engine.agent import CognitionAgent
+# Quick check the file extractor works
+files = CognitionAgent._extract_expected_files(None,
+    'Create models.py ... cli.py ... test_models.py ... Run the tests.')
+print(f'Extracted: {files}')
+"
+```
+
+If it doesn't extract all three, fix the regex before running.
+
+3. Update the heuristic `_check_task_completion()` — currently it requires a test command with exit 0. For this multi-file task, all three .py files must exist AND tests pass. The existing logic should handle this if `_extract_expected_files` returns all three. Verify.
+
+**Part B — Baseline diagnostic run (1 hour)**
+
+Run baseline with 25-turn budget. No steering, no compaction. Purpose: find where degradation hits and whether the model can complete the task at all.
+
+```bash
+cd /Users/girish11/cognition-engine
+
+EXPENSE_TASK="Build a command-line expense tracker. Step 1: Create models.py with an Expense dataclass (amount: float, category: str, date: str, description: str) and an ExpenseTracker class with methods: add_expense(expense), get_expenses_by_category(category), get_total(), get_monthly_summary(month_str). ExpenseTracker should store expenses in a list and save/load from expenses.json. Step 2: Create cli.py using argparse with subcommands: add --amount --category --description, list --category (optional filter), summary --month. cli.py should import and use ExpenseTracker from models.py. Step 3: Create test_models.py with at least 6 tests covering add_expense, get_expenses_by_category, get_total, get_monthly_summary, empty tracker edge case, and save/load round-trip. Step 4: Run the tests with pytest to verify they pass."
+
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode baseline --dir /tmp/task047b_expense_base \
+  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve
+```
+
+**What to paste back:**
+
+- Full terminal output
+- The JSON file (or at minimum the metrics block + first 10 turns)
+- `ls -la /tmp/task047b_expense_base/` to show which files were created
+- If test_models.py exists: `cat /tmp/task047b_expense_base/test_models.py`
+- If tests ran: what exit code
+
+**What I'm looking for:**
+
+- Does the model get past turn 10? (That's the degradation zone from Week 2)
+- Does CHI drop below 0.70 at any point?
+- Does it create all 3 files or get stuck rewriting one?
+- Does the duplicate-write guard fire?
+- Does the no-tool guard fire?
+- Total turns to completion (or failure mode if it doesn't complete)
+
+**Part C — Three-mode comparison (2 hours, only if Part B shows degradation)**
+
+If baseline shows CHI dropping below 0.70 or failing to complete:
+
+```bash
+EXPENSE_TASK="..." # same as above
+
+echo "=== BASELINE ==="
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode baseline --dir /tmp/task047b_exp_base \
+  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve
+
+sleep 120
+
+echo "=== STEERING ==="
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode steering --dir /tmp/task047b_exp_steer \
+  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve
+
+sleep 120
+
+echo "=== FULL LADDER ==="
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode full_ladder --dir /tmp/task047b_exp_full \
+  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve
+```
+
+If baseline completes in under 8 turns with no degradation, the task isn't hard enough. In that case we skip Part C and either make the task harder (add Step 5: create test_cli.py, Step 6: add error handling) or accept that this model doesn't degrade on tasks it can handle.
+
+**Part D — Comparison graph + report (30 min, only if Part C runs)**
+
+After all 3 runs complete, I'll spec the comparison graph: CHI curves for all 3 modes overlaid, with markers for steering activation, compaction events, and task completion. Plus a markdown report with the numbers.
 
 ---
 

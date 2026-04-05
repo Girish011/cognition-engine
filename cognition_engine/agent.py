@@ -78,6 +78,36 @@ def _command_looks_like_test_run(cmd: str) -> bool:
     return False
 
 
+def _parse_tool_call_prefer_exec_over_done(response: str) -> Optional[Dict[str, Any]]:
+    """
+    When the model packs multiple tools with [DONE], prompts.parse_tool_call returns
+    [DONE] first (global substring check). Recover by parsing from the leftmost concrete
+    directive among [WRITE]/[READ]/[EDIT]/[EXEC], stripping a trailing [DONE] so the
+    fragment parses. This fixes EXEC+DONE deadlock without skipping an earlier [WRITE].
+    """
+    parsed = parse_tool_call(response)
+    if not (parsed and parsed.get("tool") == "done"):
+        return parsed
+    first_tool = re.search(
+        r"\[(WRITE|READ|EDIT|EXEC)\]",
+        response,
+        re.IGNORECASE,
+    )
+    if not first_tool:
+        return parsed
+    fragment = response[first_tool.start() :]
+    fragment = re.split(r"\[DONE\]", fragment, maxsplit=1, flags=re.IGNORECASE)[0]
+    unpacked = parse_tool_call(fragment.strip())
+    if unpacked and unpacked.get("tool") in {
+        "write",
+        "read",
+        "edit",
+        "execute",
+    }:
+        return unpacked
+    return parsed
+
+
 def _truncate_at_stop_strings(text: str, stop_strings: List[str]) -> str:
     """
     Defense-in-depth stop-string truncation for chat-template artifacts.
@@ -289,7 +319,7 @@ class CognitionAgent:
                 # Treat explicit [DONE] as completion. Do not rely on natural-language
                 # "task is complete" phrases, since those can appear prematurely and
                 # would incorrectly clear resumable session state.
-                parsed_top = parse_tool_call(response)
+                parsed_top = _parse_tool_call_prefer_exec_over_done(response)
                 if parsed_top and parsed_top.get("tool") == "done":
                     # Guardrail: do not allow immediate [DONE] before any real tool
                     # has been executed. This prevents a resumed session from being
@@ -307,12 +337,14 @@ class CognitionAgent:
                     # TASK-045E: tasks that require tests cannot end on [DONE] until
                     # the same evidence as heuristic completion (tests actually passed).
                     if not self._explicit_done_allowed():
-                        self.compactor.add_turn("assistant", response)
+                        print(
+                            "  [DONE-REJECTED] Tests not passed yet — continuing",
+                            flush=True,
+                        )
                         self.compactor.add_turn(
                             "system",
-                            "You said [DONE] but tests have not passed yet. "
-                            "Run the test command (pytest) and verify it succeeds "
-                            "before saying [DONE].",
+                            "You said [DONE] but tests have not passed. "
+                            "Run pytest first, then say [DONE].",
                         )
                         self.turn_count += 1
                         continue
@@ -750,7 +782,7 @@ class CognitionAgent:
 
         Returns a list with 0 or 1 tool call dicts.
         """
-        parsed = parse_tool_call(response)
+        parsed = _parse_tool_call_prefer_exec_over_done(response)
         if not parsed:
             return []
         # The agent loop treats [DONE] specially at a higher level; we don't
@@ -767,7 +799,7 @@ class CognitionAgent:
                 remainder = response[cut + len(thought) :]
             else:
                 remainder = response
-            second = parse_tool_call(remainder)
+            second = _parse_tool_call_prefer_exec_over_done(remainder)
             if second and second.get("tool") in {"read", "write", "edit", "execute", "done"}:
                 # Return both: we will "execute" think (records to memory) then action.
                 if second.get("tool") == "done":
@@ -977,12 +1009,16 @@ class CognitionAgent:
         """
         Heuristic: expected files on disk + a recent successful test run (TASK-045/045D).
         Generic exit-0 commands (pip, ls, …) do not count.
+        When the task mentions .py deliverables, only those are required (TASK-047B: skip
+        e.g. expenses.json so persistence paths do not block completion before tests create them).
         """
         expected = self._extract_expected_files(self.task)
-        if not expected:
+        py_files = [f for f in expected if f.endswith(".py")]
+        required = py_files if py_files else expected
+        if not required:
             return False
         files_exist = all(
-            os.path.isfile(os.path.join(self.working_dir, f)) for f in expected
+            os.path.isfile(os.path.join(self.working_dir, f)) for f in required
         )
         if not files_exist:
             return False

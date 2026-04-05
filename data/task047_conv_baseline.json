@@ -2,7 +2,7 @@
   "protocol": "TASK-047",
   "mode": "baseline",
   "model": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
-  "working_dir": "/private/tmp/task047_conv_base",
+  "working_dir": "/private/tmp/task047_manual_conv",
   "task": "Create a Python file called converter.py with a TemperatureConverter class that has celsius_to_fahrenheit, fahrenheit_to_celsius, celsius_to_kelvin, and kelvin_to_celsius methods. Each method should handle edge cases (absolute zero check for kelvin methods - raise ValueError if result would be below 0K). Then create test_converter.py with at least 8 tests covering normal conversions and edge cases. Run the tests to verify they pass.",
   "max_turns": 20,
   "enable_steering": false,
