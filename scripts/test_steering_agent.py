@@ -288,43 +288,47 @@ def run_mode(
         enable_compaction=enable_compaction,
         turn_log=turn_log,
     )
-    agent.run(max_turns=max_turns)
+    try:
+        agent.run(max_turns=max_turns)
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n[RUN-ERROR] agent.run() raised: {exc}", flush=True)
+    finally:
+        chi_min = min(agent.chi_monitor.chi_history) if agent.chi_monitor.chi_history else None
+        chi_final = (
+            agent.chi_monitor.chi_history[-1] if agent.chi_monitor.chi_history else None
+        )
 
-    chi_min = min(agent.chi_monitor.chi_history) if agent.chi_monitor.chi_history else None
-    chi_final = (
-        agent.chi_monitor.chi_history[-1] if agent.chi_monitor.chi_history else None
-    )
+        metrics = compute_metrics(
+            turns=turn_log,
+            tool_history=agent.tool_history,
+            working_dir=str(wd_path),
+            max_turns=max_turns,
+            compaction_count=agent.compactor.compaction_count,
+            chi_min=chi_min,
+            chi_final=chi_final,
+            task=task,
+        )
 
-    metrics = compute_metrics(
-        turns=turn_log,
-        tool_history=agent.tool_history,
-        working_dir=str(wd_path),
-        max_turns=max_turns,
-        compaction_count=agent.compactor.compaction_count,
-        chi_min=chi_min,
-        chi_final=chi_final,
-        task=task,
-    )
+        payload = {
+            "protocol": "TASK-047",
+            "mode": mode,
+            "model": model_id,
+            "working_dir": str(wd_path.resolve()),
+            "task": task,
+            "max_turns": max_turns,
+            "enable_steering": enable_steering,
+            "enable_compaction": enable_compaction,
+            "turns": turn_log,
+            "tool_history": agent.tool_history,
+            "metrics": metrics,
+        }
 
-    payload = {
-        "protocol": "TASK-047",
-        "mode": mode,
-        "model": model_id,
-        "working_dir": str(wd_path.resolve()),
-        "task": task,
-        "max_turns": max_turns,
-        "enable_steering": enable_steering,
-        "enable_compaction": enable_compaction,
-        "turns": turn_log,
-        "tool_history": agent.tool_history,
-        "metrics": metrics,
-    }
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_json, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Saved: {output_json}", flush=True)
+        print(json.dumps(metrics, indent=2), flush=True)
 
-    output_json.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_json, "w") as f:
-        json.dump(payload, f, indent=2)
-    print(f"Saved: {output_json}", flush=True)
-    print(json.dumps(metrics, indent=2), flush=True)
     return payload
 
 

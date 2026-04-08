@@ -324,3 +324,29 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
   degradation. Real degradation needs 15+ turn tasks or test-debug cycles.
 - 2026-04-04: eos_token_ids={151643} (<|endoftext|>) but model emits
   151645 (<|im_end|>). Must check both in stream_generate loop.
+- TASK-047B: Full expense tracker (4 files) exceeds 7B debugging capability.
+  Model creates files correctly but can't debug failing tests.
+  Simplified to 2-file version (models.py + test_models.py, no CLI, no JSON I/O).
+  Need to verify pytest error output reaches model context (plumbing check).
+  If simplified task also fails → add structured error-feedback injection.
+  Demo story: "Simple tasks = 3 turns. Complex tasks hit degradation = ladder activates."
+  Real full-ladder demo likely needs Qwen3.5-9B (TASK-048).
+- TASK-047B diagnostic: THREE bugs found, all fixed.
+  1. stdout[:1000] truncated 83% of pytest output → raised to 3000 + --tb=short
+  2. [DONE-REJECTED] dropped assistant turn → context corruption → 10x DONE loop
+  3. Actual test bug: shared expenses.json between tests (model must debug this)
+  Previous "model can't debug" conclusion was INVALID — plumbing failures masked
+  model capability. Re-running full expense tracker before simplifying.
+- TASK-047B v9: All plumbing fixes working. Model reasons correctly about 
+  shared-file test contamination but gets stuck in 6+ consecutive [THINK] turns.
+  NEW FAILURE MODE: think-loop paralysis, not context degradation.
+  CHI bottoms at 0.675 (never reaches compaction threshold 0.65).
+  Model CAN debug — won't commit to writing the fix.
+- IMPLICATION: Our CHI thresholds were tuned for degradation scenarios that 
+  7B coding model doesn't actually exhibit. Real failure mode is behavioral, 
+  not cognitive. Think-loop happens in CHI 0.65-0.75 range.
+- Part C is now more interesting: tests whether tool_format steering can 
+  break think-loop paralysis (categorical behavioral change), not whether 
+  it prevents gradual CHI decline (marginal improvement). Better demo story.
+- ADD: [THINK]-loop specific guard (3 consecutive think calls → system 
+  injection "write the fix now"). Run Part C before deciding on 14B pivot.

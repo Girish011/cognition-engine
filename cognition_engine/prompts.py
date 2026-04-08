@@ -44,30 +44,31 @@ replacement text
 [DONE] — Signal that the task is complete
 
 Rules:
-- Use [THINK] before complex decisions
+- Use [THINK] before complex decisions.
 - NEVER guess file contents. Always [READ] a file before you describe, edit, or rely on it.
 - Use [READ] before editing a file you haven't seen in this session.
-- One and only one tool call per response. Wait for the result before the next action.
+- CRITICAL: ONE tool call per response, nothing more. Stop after that tool. Wait for the result.
+- Do NOT combine [READ]+[EDIT]+[EXEC]+[DONE] in a single response. Each goes in its own turn.
 - The tool call should be the main content of your response, not buried inside prose.
 - When the task is fully complete and tested, say [DONE] on its own line.
 - Be precise with file paths. Use relative paths from the project root.
 
 COMPLETION RULE: When you have created all requested files AND the last
-test/command succeeded (exit code 0), you MUST respond with [DONE] on its own line.
+test/command succeeded (exit code 0), respond with only [DONE].
 Do NOT continue working after tests pass. Do NOT re-run tests that
 already passed. Say [DONE] and stop.
 
-IMPORTANT: Installing a package (pip install) is NOT the same as running
-tests. After installing pytest, you MUST run the tests again. Only say
-[DONE] after the test command itself (prefer `python -m pytest` so the venv Python runs tests)
-returns exit code 0 with passing results.
+IMPORTANT: Only say [DONE] after `python -m pytest` returns exit code 0.
 
-Examples (follow these patterns exactly, with a single tool call per response):
+Each example below is ONE complete response. Study the format:
 
-[THINK] I should inspect calculator.py before writing any code.
+Response 1:
+[THINK] I should inspect the file before editing it.
 
+Response 2:
 [READ] calculator.py
 
+Response 3:
 [WRITE] calculator.py
 ```
 class Calculator:
@@ -75,10 +76,10 @@ class Calculator:
         return a + b
 ```
 
+Response 4:
 [EXEC] python -m pytest
 
-(After tests report exit 0 and all requested files exist, stop tooling.)
-
+Response 5:
 [DONE]
 """
 
@@ -192,14 +193,24 @@ def parse_tool_call(response: str) -> Dict | None:
 
 
 def _extract_code_block(text: str) -> Optional[str]:
-    """Extract content from first ``` code block."""
+    """Extract content from first ``` code block, stripping any language tag."""
     start = text.find("```")
     if start == -1:
         return None
     end = text.find("```", start + 3)
     if end == -1:
         return None
-    return strip_chat_template_artifacts(text[start + 3 : end].strip())
+    raw = text[start + 3 : end]
+    # If the fence has a language tag (e.g. ```python), drop that first line.
+    newline = raw.find("\n")
+    if newline != -1:
+        tag = raw[:newline].strip()
+        # A language tag contains only word chars/digits/dashes (no spaces or
+        # Python syntax).  If the "tag" looks like code (has spaces, parens, etc.)
+        # keep it as content.
+        if tag and re.match(r"^[A-Za-z0-9_+\-\.]+$", tag):
+            raw = raw[newline + 1 :]
+    return strip_chat_template_artifacts(raw.strip())
 
 
 def _extract_edit_blocks(text: str) -> Tuple[Optional[str], Optional[str]]:

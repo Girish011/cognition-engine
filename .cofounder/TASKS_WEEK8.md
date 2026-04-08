@@ -336,34 +336,150 @@ caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
 - Does the no-tool guard fire?
 - Total turns to completion (or failure mode if it doesn't complete)
 
-**Part C — Three-mode comparison (2 hours, only if Part B shows degradation)**
+### TASK-047B Part C: Intervention Ladder vs Think-Loop Paralysis
 
-If baseline shows CHI dropping below 0.70 or failing to complete:
+**Status:** ⬜ TODO
+**Goal:** Test whether the intervention ladder can break a 7B model out of think-loop paralysis on the expense tracker task. v9 baseline established the failure mode: model correctly diagnoses the bug but emits 6+ consecutive `[THINK]` turns instead of committing to `[WRITE]`/`[EDIT]`. CHI bottoms at 0.675.
 
-```bash
-EXPENSE_TASK="..." # same as above
+**Hypothesis:** `tool_format` steering at L16/α0.5 biases activations toward concrete tool use. Adaptive alpha will ramp up as CHI dips. If the bias is strong enough, it should push the model from `[THINK]` to `[WRITE]` during the stuck region (turns 10-20 in v9). Compaction (full_ladder) provides fresh context as a fallback if steering alone doesn't break the loop.
 
-echo "=== BASELINE ==="
-caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
-  --mode baseline --dir /tmp/task047b_exp_base \
-  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve
+---
 
-sleep 120
+**PART C.1 — Add think-loop guard (10 min, prerequisite)**
 
-echo "=== STEERING ==="
-caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
-  --mode steering --dir /tmp/task047b_exp_steer \
-  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve
+The existing anti-loop guard checks `_tool_call_signature` for repeated identical tool calls. `[THINK]` calls won't trigger it because each thought has different content. Add a specific guard for consecutive think turns.
 
-sleep 120
+In `cognition_engine/agent.py`, add to `__init__`:
 
-echo "=== FULL LADDER ==="
-caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
-  --mode full_ladder --dir /tmp/task047b_exp_full \
-  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve
+```python
+self._consecutive_think_count = 0
 ```
 
-If baseline completes in under 8 turns with no degradation, the task isn't hard enough. In that case we skip Part C and either make the task harder (add Step 5: create test_cli.py, Step 6: add error handling) or accept that this model doesn't degrade on tasks it can handle.
+After `_parse_tool_calls()` returns, before tool execution:
+
+```python
+think_only = (
+    len(tool_calls) == 1
+    and tool_calls[0].get("tool") == "think"
+)
+if think_only:
+    self._consecutive_think_count += 1
+else:
+    self._consecutive_think_count = 0
+
+if self._consecutive_think_count >= 3:
+    print("[THINK-LOOP-GUARD] 3+ consecutive think calls — injecting commit nudge.", flush=True)
+    self.compactor.add_turn(
+        "system",
+        "You have analyzed the problem enough. Stop thinking. "
+        "Your next response MUST be [WRITE], [EDIT], or [EXEC] — "
+        "no [THINK]. Commit to a fix and execute it."
+    )
+    self._consecutive_think_count = 0
+    self._guard_fire_count += 1  # feeds guard-triggered compaction
+```
+
+This nudge fires before the steered/compacted modes get a chance to act, so it'll appear in baseline too. That's intentional — we want to know whether the nudge ALONE is enough or whether steering/compaction adds value on top.
+
+**Verification before running Part C:** sanity-check the guard fires by running a quick 8-turn baseline and confirming `[THINK-LOOP-GUARD]` appears in stdout if the model think-loops.
+
+---
+
+**PART C.2 — Verify CHI threshold for compaction**
+
+v9 showed CHI bottoming at 0.675. Current compaction threshold is 0.65 with 3-turn grace period — this means compaction will NOT fire from CHI alone in this scenario. That's intentional for this run; we want to see whether:
+
+1. Steering fires (CHI < 0.7 → yes, will activate)
+2. Guard-triggered compaction fires (think-loop guard increments `_guard_fire_count`, hits 2 → forces compaction)
+
+Do NOT raise the compaction threshold for this test. We want to see the guard path exercised. If after this run we decide CHI thresholds need retuning, that's a separate task (TASK-046B).
+
+---
+
+**PART C.3 — Run all 3 modes (3-4 hours wall clock)**
+
+```bash
+cd /Users/girish11/cognition-engine
+
+EXPENSE_TASK="Build a command-line expense tracker. Step 1: Create models.py with an Expense dataclass (amount: float, category: str, date: str, description: str) and an ExpenseTracker class with methods: add_expense(expense), get_expenses_by_category(category), get_total(), get_monthly_summary(month_str). ExpenseTracker should store expenses in a list and save/load from expenses.json. Step 2: Create cli.py using argparse with subcommands: add --amount --category --description, list --category (optional filter), summary --month. cli.py should import and use ExpenseTracker from models.py. Step 3: Create test_models.py with at least 6 tests covering add_expense, get_expenses_by_category, get_total, get_monthly_summary, empty tracker edge case, and save/load round-trip. Step 4: Run the tests with pytest to verify they pass."
+
+echo "=== BASELINE (with think-loop guard, no steering, no compaction) ==="
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode baseline --dir /tmp/task047c_exp_base \
+  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve 2>&1 | tee data/task047c_base.log
+
+sleep 120
+
+echo "=== STEERING (think-loop guard + tool_format L16/α0.5 adaptive) ==="
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode steering --dir /tmp/task047c_exp_steer \
+  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve 2>&1 | tee data/task047c_steer.log
+
+sleep 120
+
+echo "=== FULL LADDER (think-loop guard + steering + compaction) ==="
+caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+  --mode full_ladder --dir /tmp/task047c_exp_full \
+  --max-turns 25 --task "$EXPENSE_TASK" --auto-approve 2>&1 | tee data/task047c_full.log
+```
+
+JSON outputs go to `data/task047c_{mode}.json`. Stdout logs to `data/task047c_{mode}.log`.
+
+---
+
+**PART C.4 — Metrics to extract from each run**
+
+For each of the 3 runs, capture:
+
+1. **Completion outcome:** completed via `[DONE]`, completed via heuristic, or hit max_turns
+2. **Turn number where pytest first runs and which exit code**
+3. **Turn number where pytest second runs (if any) and exit code** — this is the key metric. If pytest re-runs with exit 0, the model fixed the bug.
+4. **Max consecutive `[THINK]` turns** — does it stay at 6 like v9, or does an intervention break it earlier?
+5. **`[THINK-LOOP-GUARD]` fire count and turns** — when did the nudge fire?
+6. **CHI trace** — min, final, and the turn-by-turn values especially around the stuck region
+7. **Steering activation log** (steering + full_ladder modes only) — turns where steering was active, alpha values used
+8. **Compaction events** (full_ladder only) — did compaction fire? What triggered it (CHI, steering timeout, or guard count)?
+9. **Files modified after first pytest failure** — did the model actually write a fix to test_models.py or models.py?
+
+---
+
+**PART C.5 — Decision tree based on results**
+
+**Outcome 1: Baseline completes the task.**
+The think-loop guard alone was sufficient. Steering and compaction add nothing for this failure mode. Demo story: "Behavioral nudges in the agent loop unstick a stuck local model." Document this as the primary finding. Steering becomes a Phase 4+ optimization, not a hero feature. Move to TASK-048 with the current 7B model.
+
+**Outcome 2: Baseline fails. Steering completes the task.**
+The hero result. Activation steering breaks behavioral paralysis that prompt-level nudges can't. This is the demo. Make the demo video about THIS specific scenario. Ship it. Move to TASK-048 to validate on 14B.
+
+**Outcome 3: Baseline + steering both fail. Full_ladder completes via compaction.**
+Compaction (Level 3) is the workhorse, steering (Level 2) is supporting cast. Demo story emphasizes the ladder system, not steering specifically. This is fine — it validates the architecture even if it deflates the steering moat narrative.
+
+**Outcome 4: All three fail.**
+The 7B model truly cannot escape this think-loop, regardless of intervention. Move to Qwen2.5-Coder-14B and re-run the entire Part C on the larger model. The infrastructure is validated, the model is the bottleneck.
+
+**Outcome 5: All three succeed identically (like the calculator/converter runs).**
+The think-loop guard alone fixed everything and the steering/compaction never activated meaningfully. Same as Outcome 1 but cleaner — the guard is the answer.
+
+---
+
+**PART C.6 — Comparison report**
+
+After all 3 runs complete, paste back:
+
+- The 3 JSON files (or metrics blocks)
+- The 3 log files (terminal output)
+- `ls -la /tmp/task047c_exp_{base,steer,full}/` to confirm what files exist
+- For each run that ran pytest twice, paste the second pytest exit code
+
+I'll write the comparison report and the BRAIN update based on which outcome we hit.
+
+---
+
+**Time estimate:** 30 min for C.1 (guard) + verification, 3-4 hours wall clock for the 3 runs (most of it model inference, you can do other work), 30 min for analysis.
+
+**Git plan:**
+- Commit C.1 separately: `TASK-047C-prep: think-loop guard for behavioral paralysis`
+- Commit results after analysis: `TASK-047C: intervention ladder vs think-loop on expense tracker`
 
 **Part D — Comparison graph + report (30 min, only if Part C runs)**
 

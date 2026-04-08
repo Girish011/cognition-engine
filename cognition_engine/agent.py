@@ -81,30 +81,40 @@ def _command_looks_like_test_run(cmd: str) -> bool:
 def _parse_tool_call_prefer_exec_over_done(response: str) -> Optional[Dict[str, Any]]:
     """
     When the model packs multiple tools with [DONE], prompts.parse_tool_call returns
-    [DONE] first (global substring check). Recover by parsing from the leftmost concrete
-    directive among [WRITE]/[READ]/[EDIT]/[EXEC], stripping a trailing [DONE] so the
-    fragment parses. This fixes EXEC+DONE deadlock without skipping an earlier [WRITE].
+    [DONE] first (global substring check). Recover by scanning for action directives
+    in left-to-right order and returning the first one that parses successfully.
+
+    Falls through to the next directive if one fails (e.g. a malformed [EDIT] that
+    lacks old/new blocks won't block a subsequent [EXEC] from running).
     """
     parsed = parse_tool_call(response)
     if not (parsed and parsed.get("tool") == "done"):
         return parsed
-    first_tool = re.search(
+
+    _ACTION_DIRECTIVE_RE = re.compile(
         r"\[(WRITE|READ|EDIT|EXEC)\]",
-        response,
         re.IGNORECASE,
     )
-    if not first_tool:
-        return parsed
-    fragment = response[first_tool.start() :]
-    fragment = re.split(r"\[DONE\]", fragment, maxsplit=1, flags=re.IGNORECASE)[0]
-    unpacked = parse_tool_call(fragment.strip())
-    if unpacked and unpacked.get("tool") in {
-        "write",
-        "read",
-        "edit",
-        "execute",
-    }:
-        return unpacked
+    action_tools = {"write", "read", "edit", "execute"}
+
+    for m in _ACTION_DIRECTIVE_RE.finditer(response):
+        fragment = response[m.start() :]
+        fragment = re.split(r"\[DONE\]", fragment, maxsplit=1, flags=re.IGNORECASE)[0]
+        unpacked = parse_tool_call(fragment.strip())
+        if unpacked and unpacked.get("tool") in action_tools:
+            return unpacked
+        # [EDIT] with a plain code block (model uses WRITE syntax under EDIT
+        # directive) — re-parse as [WRITE] so the intended rewrite executes
+        # instead of silently falling through to a later [EXEC].
+        directive_tag = m.group(1).upper()
+        if directive_tag == "EDIT" and unpacked is None:
+            write_fragment = re.sub(
+                r"^\[EDIT\]", "[WRITE]", fragment.strip(), flags=re.IGNORECASE
+            )
+            write_result = parse_tool_call(write_fragment)
+            if write_result and write_result.get("tool") == "write":
+                return write_result
+
     return parsed
 
 
@@ -220,6 +230,8 @@ class CognitionAgent:
         self._turns_below_compaction = 0
         self._steering_active_turns = 0
         self._guard_fire_count = 0
+        # TASK-047C: consecutive think-loop guard
+        self._consecutive_think_count = 0
 
         # Steering state (optional)
         self.steering = None
@@ -292,6 +304,23 @@ class CognitionAgent:
                     if anchor:
                         self.compactor.add_turn("system", anchor)
 
+                # 1b. Passive overflow guard — trim context if it exceeds the
+                # model's window even in baseline mode (no compaction).  This
+                # prevents Metal OOM on long runs without counting as a
+                # compaction event or skewing the CHI/compaction metrics.
+                ctx_tokens = self.compactor.get_context_tokens()
+                if ctx_tokens > self.compactor.max_context_tokens:
+                    print(
+                        f"  [OVERFLOW-TRIM] Context {ctx_tokens} tokens "
+                        f"> {self.compactor.max_context_tokens} limit — "
+                        "passively trimming (not counted as compaction)",
+                        flush=True,
+                    )
+                    saved_count = self.compactor.compaction_count
+                    self.compactor.compact("trim")
+                    # Restore count so this does not appear as a compaction event.
+                    self.compactor.compaction_count = saved_count
+
                 # 2. Build prompt tokens and generate (Qwen chat template)
                 prompt_tokens = self._build_prompt_tokens()
                 prompt_tokens_len = len(prompt_tokens)
@@ -301,7 +330,7 @@ class CognitionAgent:
                     self.model,
                     self.tokenizer,
                     prompt=prompt_tokens,
-                    max_tokens=800,
+                    max_tokens=1600,
                 ):
                     # Stop on <|im_end|> or a finished stream record.
                     if gen_result.token == self._im_end_id:
@@ -341,6 +370,10 @@ class CognitionAgent:
                             "  [DONE-REJECTED] Tests not passed yet — continuing",
                             flush=True,
                         )
+                        # Keep the assistant turn in context so the alternation
+                        # system→assistant→system is preserved; the model needs
+                        # to see what it said to avoid looping.
+                        self.compactor.add_turn("assistant", response)
                         self.compactor.add_turn(
                             "system",
                             "You said [DONE] but tests have not passed. "
@@ -390,6 +423,34 @@ class CognitionAgent:
                         )
                         self.turn_count += 1
                         continue
+
+                # TASK-047C: Think-loop guard — consecutive thinks with
+                # *different* content (identical-think guard above handles
+                # same-content repeats).  Detects behavioral paralysis where
+                # the model keeps reasoning but never commits to an action.
+                think_only = (
+                    len(tool_calls) == 1
+                    and tool_calls[0].get("tool") == "think"
+                )
+                if think_only:
+                    self._consecutive_think_count += 1
+                else:
+                    self._consecutive_think_count = 0
+
+                if self._consecutive_think_count >= 3:
+                    print(
+                        "[THINK-LOOP-GUARD] 3+ consecutive think calls "
+                        "— injecting commit nudge.",
+                        flush=True,
+                    )
+                    self.compactor.add_turn(
+                        "system",
+                        "You have analyzed the problem enough. Stop thinking. "
+                        "Your next response MUST be [WRITE], [EDIT], or [EXEC] — "
+                        "no [THINK]. Commit to a fix and execute it.",
+                    )
+                    self._consecutive_think_count = 0
+                    self._guard_fire_count += 1
 
                 tool_results = []
                 duplicate_write_interrupt = False
@@ -924,6 +985,11 @@ class CognitionAgent:
         elif stripped.startswith("pytest "):
             cmd = cmd.replace("pytest", f"{sys.executable} -m pytest", 1)
 
+        # When the model calls pytest without a --tb flag, force --tb=short so
+        # assertion errors fit in the context window without verbose expansion.
+        if re.search(r"\bpytest\b", cmd, re.IGNORECASE) and "--tb" not in cmd:
+            cmd = cmd.rstrip() + " --tb=short"
+
         if not self.auto_approve:
             approval = input(f"  Execute: `{cmd}`? [y/N] ")
             if approval.lower() != "y":
@@ -937,9 +1003,14 @@ class CognitionAgent:
                 cwd=self.working_dir,
                 timeout=30,
             )
-            output = result.stdout[:1000]
-            if result.returncode != 0:
-                output += f"\n[STDERR: {result.stderr[:500]}]"
+            # 3000 chars fits --tb=short for ~6 failures; stderr is usually
+            # empty for pytest but may contain import errors or warnings.
+            stdout_limit = 3000
+            output = result.stdout[:stdout_limit]
+            if len(result.stdout) > stdout_limit:
+                output += f"\n[...stdout truncated at {stdout_limit} chars]"
+            if result.returncode != 0 and result.stderr.strip():
+                output += f"\n[STDERR: {result.stderr[:800]}]"
             code = result.returncode
             return f"[EXEC `{cmd}` → exit {code}]\n{output}", code
         except subprocess.TimeoutExpired:
