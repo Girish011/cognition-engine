@@ -54,9 +54,9 @@ Studies show large multi-turn coding sessions suffer **~39% degradation** in cor
 
 ## Roadmap
 
-- **Activation steering** — Use hidden states to nudge the model back on task (EasySteer-style).
-- **Context compaction** — Shrink working context when CHI drops while keeping task anchors.
-- **LoRA crystallization** — Nightly fine-tuning on session data to improve the local model over time.
+- **Activation steering** - Use hidden states to nudge the model back on task (EasySteer-style).
+- **Context compaction** - Shrink working context when CHI drops while keeping task anchors.
+- **LoRA crystallization** - Nightly fine-tuning on session data to improve the local model over time.
 
 ---
 
