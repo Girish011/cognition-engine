@@ -20,7 +20,7 @@ This is what degradation looks like over a 20-turn conversation. Entropy and goa
 
 ## What it does
 
-- **CHI score (0–1)** - One number from entropy, repetition, and goal drift. High = healthy; low = degraded.
+- **CHI score (0-1)** - One number from entropy, repetition, and goal drift. High = healthy; low = degraded.
 - **Intervention levels** - Level 1 (normal) → 2 (steer) → 3 (compact context) → 4 (escalate). Thresholds drive when to intervene.
 - **CLI with live CHI** - Chat with the model from the terminal; see CHI and E/R/D after every reply.
 
