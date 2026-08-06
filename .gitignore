@@ -9,8 +9,13 @@ __pycache__/
 # Data outputs (keep READMEs and .gitkeep)
 data/*.json
 data/*.png
+data/*.log
 data/activations_*.npz
 data/steering_vectors/*.npz
 !data/full_degradation_graph.png
 !data/.gitkeep
 !data/*README*
+
+# Runtime artifacts from agent experiments
+expenses.json
+*.log

@@ -793,3 +793,74 @@ A major limitation of traditional activation steering is that it is "always on".
   - `/tmp/task047_conv_base`: `converter.py`, `test_converter.py` ✅
   - `/tmp/task047_conv_steer`: `converter.py`, `test_converter.py` ✅
   - `/tmp/task047_conv_full`: `converter.py`, `test_converter.py` ✅
+
+## 2026-04-08 (Week 8 — TASK-047C: Intervention ladder vs think-loop paralysis)
+
+### Pre-flight checks
+- Confirmed `parse_tool_call()` returns `{"tool": "think", ...}` (lowercase) — guard check matches.
+- Confirmed `_guard_fire_count` already exists in `__init__` from TASK-046 Part C (line 232).
+
+### C.1 — Think-loop guard implementation
+- Added `self._consecutive_think_count = 0` to `CognitionAgent.__init__` (line 233).
+- Added guard logic at lines 427-453 in `agent.py`:
+  - Counts consecutive think-only turns (`len(tool_calls) == 1 and tool == "think"`).
+  - At 3 consecutive, injects system nudge: "Stop thinking. Your next response MUST be [WRITE], [EDIT], or [EXEC]."
+  - Resets counter and increments `_guard_fire_count` (feeds guard-triggered compaction at count >= 2).
+- Counter simulation verified: fires on turn 3, resets, would fire again on turn 6.
+- Import check passed: `import cognition_engine.agent` OK.
+
+### Plumbing fixes committed alongside (from v9 diagnostics)
+- Overflow trim: passive context trimming when tokens exceed window (not counted as compaction).
+- DONE-REJECTED: preserve assistant turn in context to prevent 10x DONE loop.
+- pytest `--tb=short` auto-injection + stdout limit raised to 3000 chars.
+- Prompt clarity: explicit one-tool-per-response examples with "Response N:" format.
+- `_parse_tool_call_prefer_exec_over_done`: fall-through loop for multi-directive responses.
+- `test_steering_agent.py`: try/finally so metrics JSON saves even on crash.
+- `max_tokens` raised from 800 to 1600.
+
+### Git
+- Committed as `55396d0`: `TASK-047C-prep: think-loop guard + plumbing fixes for expense tracker runs`
+
+### C.3 — Three-mode comparison runs (expense tracker)
+- First two attempts failed: `$EXPENSE_TASK` env var didn't survive background shell expansion (task was empty string, model wrote random code).
+- Fix: wrote `scripts/run_task047c.sh` with task inline; all 3 modes ran successfully.
+
+### Results — Outcome #2: Baseline fails, steering completes
+
+| Metric | Baseline | Steering | Full Ladder |
+|---|---|---|---|
+| Completed | **No** (25 turns, max) | **Yes** (10 turns) | **Yes** (10 turns) |
+| Completion type | — | Heuristic | Heuristic |
+| pytest 1st run | Turn 9, exit 1 (5/6 fail) | Turn 9, exit 0 (6/6 pass) | Turn 9, exit 0 (6/6 pass) |
+| pytest 2nd run | Turn 18, exit 1 | — | — |
+| Max consec [THINK] | **6** | 1 | 1 |
+| Guard fires | 2 (turns 20, 23) | 0 | 0 |
+| CHI min / final | 0.675 / 0.694 | 0.675 / 0.687 | 0.675 / 0.687 |
+| Steering active | N/A | Turn 0-9, alpha ~0.41 | Turn 0-9, alpha ~0.41 |
+| Compaction events | 0 | 0 | 0 |
+| Action tool calls | 5 | 4 | 4 |
+
+### Baseline failure analysis
+- Model wrote `models.py` with auto-load in `__init__` and auto-save in `add_expense` — causes shared-state test contamination via `expenses.json` (same bug as v9).
+- pytest failed 5/6 tests. Model diagnosed bug correctly ("ExpenseTracker is not correctly handling the expenses") but entered think-loop replaying task instructions without writing a fix.
+- Think-loop guard fired twice (turns 20, 23) — model ignored both nudges.
+- Second pytest run at turn 18: same failures. Then think-looped until max_turns.
+
+### Steering success analysis
+- Steered model wrote cleaner code from the start: explicit `save(filename)` / `load(filename)`, no auto-load/save in `__init__`/`add_expense`. Tests passed first try.
+- Steering active from turn 0 (CHI started at 0.676, below 0.7 threshold), alpha ~0.41.
+- Max consecutive think-only turns: 1. Never entered a think-loop.
+- **Key insight: steering didn't break a think-loop — it prevented the buggy code from being written in the first place.** The `tool_format` vector at L16/alpha 0.41 biased the model toward more modular, testable code (explicit save/load with filename params vs auto-save side effects).
+
+### Full ladder
+- Identical to steering. Compaction never needed to activate.
+
+### Code diffs (baseline vs steered models.py)
+- Baseline: `self.load_expenses()` in `__init__`, `self.save_expenses()` in `add_expense`, hardcoded `'expenses.json'`.
+- Steered: explicit `save(filename)` / `load(filename)`, no auto-load, parameterized filename.
+
+### Artifacts
+- `data/task047c_base.json`, `data/task047c_steer.json`, `data/task047c_full.json`
+- `data/task047c_base.log`, `data/task047c_steer.log`, `data/task047c_full.log`
+- Working dirs: `/tmp/task047c_exp_{base,steer,full}/`
+- `scripts/run_task047c.sh` (runner script)

@@ -264,6 +264,20 @@ cognitive monitoring on MLX." No mention of acquisition/selling.
 - REVISED DEMO NARRATIVE: "Infrastructure makes local models reliable. 
   Simple tasks complete in 3 turns. Complex tasks hit degradation — 
   the ladder catches it." Need a 15+ turn task for the second half.
+- 2026-04-08: MLX generation at temp 0 is fully deterministic. All Week 6-8
+  steering comparisons were implicitly n=1 but valid as clean A/B tests.
+  Variance methodology should be across TASKS, not across runs.
+- 2026-04-08: CHI goal drift is structurally broken for realistic agentic
+  tasks. Cosine similarity between short response hidden states and long
+  prompt hidden states is geometrically pinned ~0.39, causing CHI to max
+  out at ~0.69 regardless of actual task state. Ladder levels 1, 3, 4 are
+  unreachable. Level 2 is always-on from turn 0.
+- 2026-04-08: TASK-047C's "steering breaks think-loop" narrative was wrong.
+  Actual mechanism: always-on tool_format steering from turn 0 produced
+  different code than baseline. Claim about CHI-triggered intervention
+  is invalidated until CHI is fixed (TASK-047E).
+- 2026-04-08: Blocker stack: TASK-047E fixes CHI → TASK-048 tests 14B → 
+  TASK-052 tests Gemma 4 architecture. Do not run TASK-048 until CHI is fixed.
 
 ## KEY LEARNINGS (condensed)
 

@@ -485,6 +485,305 @@ I'll write the comparison report and the BRAIN update based on which outcome we 
 
 After all 3 runs complete, I'll spec the comparison graph: CHI curves for all 3 modes overlaid, with markers for steering activation, compaction events, and task completion. Plus a markdown report with the numbers.
 
+Here's the task spec. Drop this into `TASKS_WEEK8.md` after TASK-047C.
+
+---
+
+### TASK-047D: Replicate TASK-047C Steering Effect (Verification Gate)
+**Status:** ⬜ TODO
+**Blocks:** TASK-048 (do not start 14B eval until this completes)
+**Time:** 3-4 hours (mostly wall-clock, unattended)
+
+**Why this task exists:**
+TASK-047C produced a potentially major finding (steering improved upstream code quality, not just prevented degradation) based on n=1 per condition. Before we build the Phase 3 demo narrative or commit to a product pivot around "always-on steering as behavioral prior," we need to verify the effect is reproducible. A single lucky run is not a product moat.
+
+**What we're testing:**
+1. Is Qwen2.5-Coder-7B generation deterministic under `mlx_lm.generate`?
+2. Does baseline reliably produce the auto-save/load bug, or was it a single unlucky draw?
+3. Does steering reliably produce explicit save/load methods, or was it a single lucky draw?
+4. Is CHI starting below 0.7 on turn 0 a cold-start artifact or a real signal?
+
+---
+
+**PART D.1 — Determinism check (5 min)**
+
+Before replicating anything, confirm whether MLX generation is deterministic at the same prompt. Run:
+
+```bash
+cd /Users/girish11/cognition-engine
+
+.venv/bin/python -c "
+from mlx_lm import load, generate
+model, tok = load('mlx-community/Qwen2.5-Coder-7B-Instruct-4bit')
+for i in range(3):
+    out = generate(model, tok, 'Write hello world in Python', max_tokens=50, verbose=False)
+    print(f'--- Run {i} ---')
+    print(out[:200])
+    print()
+"
+```
+
+**Interpretation:**
+- If all 3 outputs are byte-identical → generation is deterministic at temperature 0, and any variance in TASK-047C must come from context differences (steering injection). Replication variance will come from other sources (random pytest output ordering, file system state, etc.).
+- If outputs differ → generation has inherent randomness (likely from sampling even at low temp, or non-deterministic kernel execution on Metal), and single-run comparisons are fundamentally unreliable. This alone justifies D.2.
+
+Paste the 3 outputs back.
+
+---
+
+**PART D.2 — Cold-start CHI investigation (15 min)**
+
+Before running replications, investigate whether turn 0 CHI starting below 0.7 is a real signal or a cold-start artifact.
+
+Check the TASK-047C JSON files for turn 0 raw signals:
+
+```bash
+.venv/bin/python -c "
+import json
+for mode in ['base', 'steer', 'full']:
+    with open(f'data/task047c_{mode}.json') as f:
+        data = json.load(f)
+    t0 = data['turns'][0] if 'turns' in data else data.get('history', [{}])[0]
+    print(f'=== {mode} turn 0 ===')
+    print(f'  chi_score: {t0.get(\"chi_score\")}')
+    print(f'  chi_raw: {t0.get(\"chi_raw\")}')
+    print(f'  entropy: {t0.get(\"entropy\")}')
+    print(f'  repetition: {t0.get(\"repetition\")}')
+    print(f'  goal_drift: {t0.get(\"goal_drift\")}')
+    print()
+"
+```
+
+**What to look for:**
+- If repetition is 0.0 on turn 0 (no previous response to compare against), that's pulling CHI down artificially
+- If goal_drift is computed against an empty or minimal context, that's also suspect
+- If entropy is normal but the other two are degenerate, CHI has a cold-start bug
+
+Paste the output back. This determines whether "steering activated from turn 0" in TASK-047C was triggered by real degradation signal or by a measurement artifact. The distinction matters — if it's an artifact, the steering-improves-code claim is even weaker because the steering shouldn't have been on in the first place.
+
+---
+
+**PART D.3 — Replication runs (2-3 hours wall clock, unattended)**
+
+Run 5 baseline and 5 steering runs on the same expense tracker task with reduced max_turns (15) since we already know the task either completes by turn 10 or gets stuck.
+
+```bash
+cd /Users/girish11/cognition-engine
+
+EXPENSE_TASK="Build a command-line expense tracker. Step 1: Create models.py with an Expense dataclass (amount: float, category: str, date: str, description: str) and an ExpenseTracker class with methods: add_expense(expense), get_expenses_by_category(category), get_total(), get_monthly_summary(month_str). ExpenseTracker should store expenses in a list and save/load from expenses.json. Step 2: Create cli.py using argparse with subcommands: add --amount --category --description, list --category (optional filter), summary --month. cli.py should import and use ExpenseTracker from models.py. Step 3: Create test_models.py with at least 6 tests covering add_expense, get_expenses_by_category, get_total, get_monthly_summary, empty tracker edge case, and save/load round-trip. Step 4: Run the tests with pytest to verify they pass."
+
+echo "=== BASELINE RUNS (5x) ==="
+for i in 1 2 3 4 5; do
+  echo "--- baseline run $i ---"
+  caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+    --mode baseline --dir /tmp/task047d_base_$i \
+    --max-turns 15 --task "$EXPENSE_TASK" --auto-approve 2>&1 | tee data/task047d_base_$i.log
+  mv data/task047c_baseline.json data/task047d_base_$i.json 2>/dev/null || true
+  sleep 60
+done
+
+echo "=== STEERING RUNS (5x) ==="
+for i in 1 2 3 4 5; do
+  echo "--- steering run $i ---"
+  caffeinate -dimsu .venv/bin/python -u scripts/test_steering_agent.py \
+    --mode steering --dir /tmp/task047d_steer_$i \
+    --max-turns 15 --task "$EXPENSE_TASK" --auto-approve 2>&1 | tee data/task047d_steer_$i.log
+  mv data/task047c_steering.json data/task047d_steer_$i.json 2>/dev/null || true
+  sleep 60
+done
+```
+
+**Note on output file naming:** The harness currently writes to `data/task047c_{mode}.json` by default. Either (a) modify `scripts/test_steering_agent.py` to accept a `--run-id` flag that suffixes the output filename, or (b) use the `mv` trick shown above after each run. Option (a) is cleaner; option (b) works without code changes. Pick one before starting.
+
+**Cooldown:** 60 seconds between runs keeps the M4 Pro thermals manageable over 10 sequential inference sessions. If you see thermal throttling, bump to 120.
+
+---
+
+**PART D.4 — Metrics to extract per run**
+
+For each of the 10 runs, record:
+
+1. **Completion:** Yes/No, turn count if yes
+2. **pytest first run:** turn number, exit code (0 or 1)
+3. **pytest second run:** turn number and exit code if it happened
+4. **models.py has auto-load in __init__:** Yes/No (the bug)
+5. **models.py has explicit save/load methods:** Yes/No (the fix pattern)
+6. **test_models.py uses auto-save assumption:** Yes/No (the buggy test pattern)
+7. **Max consecutive [THINK] turns:** integer
+8. **Guard fires:** count
+9. **CHI min, CHI final:** two floats
+10. **Steering active turns** (steering runs only): list of turn numbers where steering was on
+
+You can script this extraction:
+
+```bash
+.venv/bin/python -c "
+import json, os, re
+
+def check_autoload(path):
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        content = f.read()
+    has_init_load = bool(re.search(r'def __init__.*?self\.load', content, re.DOTALL))
+    has_explicit_save = 'def save(' in content and 'filename' in content
+    return {'auto_load_in_init': has_init_load, 'explicit_save_load': has_explicit_save}
+
+results = []
+for mode in ['base', 'steer']:
+    for i in range(1, 6):
+        run = {'mode': mode, 'run': i}
+        json_path = f'data/task047d_{mode}_{i}.json'
+        if os.path.exists(json_path):
+            with open(json_path) as f:
+                data = json.load(f)
+            run['completed'] = data.get('completion_type') is not None
+            run['total_turns'] = data.get('total_turns') or len(data.get('turns', []))
+            run['chi_min'] = data.get('chi_min')
+            run['chi_final'] = data.get('chi_final')
+        models_path = f'/tmp/task047d_{mode}_{i}/models.py'
+        code_check = check_autoload(models_path)
+        if code_check:
+            run.update(code_check)
+        results.append(run)
+
+for r in results:
+    print(r)
+"
+```
+
+---
+
+**PART D.5 — Decision criteria**
+
+Paste the 10-run summary back. I'll apply these criteria:
+
+**Strong result (replicates TASK-047C):**
+- Baseline writes auto-save bug in ≥4/5 runs
+- Steering writes explicit save/load in ≥4/5 runs
+- Baseline completion rate ≤1/5, steering completion rate ≥4/5
+- **Action:** Update BRAIN with confirmed finding. Pivot demo narrative to "always-on steering as behavioral prior." Design TASK-048 around replicating this effect on Qwen2.5-Coder-14B.
+
+**Noisy result (effect exists but unreliable):**
+- Baseline writes auto-save bug in 2-3/5 runs
+- Steering writes explicit save/load in 3-4/5 runs but baseline also produces it sometimes
+- Mixed completion rates
+- **Action:** Flag as "directionally positive, not publication-ready." Continue with original TASK-048 plan (14B as capability upgrade, not steering replication). Run a second 10-run experiment on 14B to see if the effect strengthens with model size.
+
+**Null result (no replication):**
+- Baseline and steering produce similar code quality
+- Completion rates roughly equal
+- TASK-047C was a lucky single run
+- **Action:** Roll back any narrative changes. Steering's role remains "marginal CHI stabilization" as per Week 7 finding. Demo narrative emphasizes CHI monitoring + think-loop guard, not steering. Proceed to TASK-048 as originally planned.
+
+**Inverted result (steering makes things worse):**
+- Steering runs fail more often than baseline
+- **Action:** Something is wrong with our steering setup. Investigate before any further work. This would be unexpected but not impossible — always-on steering at α≈0.41 from turn 0 is aggressive.
+
+---
+
+**PART D.6 — What to paste back**
+
+1. The 3 determinism check outputs from D.1
+2. The turn 0 CHI components output from D.2
+3. The 10-run summary table from D.4 (scripted extraction output)
+4. `models.py` content from run 1 of each mode (`cat /tmp/task047d_base_1/models.py` and `cat /tmp/task047d_steer_1/models.py`) to eyeball the pattern
+5. Any runs that crashed or behaved unexpectedly — raw log dump
+
+I'll do the analysis and write the BRAIN update based on which decision criterion we hit.
+
+---
+
+**Git plan:**
+- If you modify `test_steering_agent.py` to add `--run-id`, commit that separately as `TASK-047D-prep: add run-id flag for replication experiments`
+- Commit the experiment results as `TASK-047D: n=5 replication of TASK-047C steering effect`
+- Only update `COFOUNDER_BRAIN.md` AFTER the decision criterion is applied, in a separate commit: `brain: TASK-047D findings on steering reliability`
+
+---
+
+**Checklist before kicking off:**
+- [ ] D.1 determinism check run and pasted back
+- [ ] D.2 cold-start CHI investigation run and pasted back
+- [ ] Output file naming strategy chosen (--run-id flag or mv trick)
+- [ ] D.3 replication runs kicked off (overnight is fine)
+- [ ] D.4 extraction script ready to run after all 10 complete
+
+---
+
+That's the spec. Two things I'd do right now while the task is fresh:
+
+1. Run D.1 (determinism check). It's 5 minutes and the result changes how we interpret everything else. If MLX is non-deterministic, the whole Week 7 steering comparison stack has the same n=1 reliability problem we're investigating here — not just TASK-047C.
+
+2. Run D.2 (cold-start CHI investigation). Also 5 minutes. If turn 0 CHI is an artifact, we have a real bug to fix in `cognition_engine/chi.py` and the steering activation logic.
+
+Those two checks take 10 minutes combined and they might change the scope of D.3 before you burn 3 hours on replication runs.
+
+TASK-047E: Fix CHI Goal Drift + Cold Start, Recalibrate Thresholds
+Status: ⬜ TODO
+Blocks: TASK-048
+Time: 4-6 hours
+Why: TASK-047D proved goal drift is structurally broken for realistic agentic tasks. CHI is pinned in a 0.02-wide band by representation geometry, not by actual cognitive state. The intervention ladder cannot function until this is fixed.
+PART E.1 — Log all raw signals (30 min, prerequisite)
+Before changing anything, add full signal logging to every CHI update. In cognition_engine/chi.py, the update() return dict should include:
+pythonreturn {
+    "chi_score": chi_smoothed,
+    "chi_raw": chi_current,
+    "entropy_raw": entropy_value,
+    "entropy_health": entropy_health,
+    "repetition_raw": repetition_value,
+    "repetition_health": repetition_health,
+    "repetition_gated": gated_flag,
+    "goal_drift_raw": drift_value,
+    "goal_drift_health": drift_health,
+    "goal_drift_cosine": raw_cosine_before_health_conversion,
+    "response_token_count": token_count,
+    "turn_index": self.turn_count,
+    "intervention_level": self.get_intervention_level(),
+}
+Update the agent's per-turn logging to capture all of these in data/task047*_*.json. Past experiments had limited signal visibility — we should never debug CHI issues again without full raw signal traces.
+PART E.2 — Fix goal drift (2-3 hours)
+The current implementation computes cosine similarity between the task's hidden state representation and the response's hidden state representation, then converts to a health score. Two problems:
+
+Short responses vs long prompts produce structurally low cosine by geometry, not semantics
+The baseline cosine varies wildly by task length, so a fixed threshold is meaningless
+
+Three possible fixes, pick one after experimentation:
+Option A — Rolling baseline normalization. Compute the "on-task" cosine for the first 3 turns, treat that as the per-task baseline, and measure drift as deviation from that baseline, not absolute cosine.
+python# First 3 turns: collect baselines, return neutral health (e.g., 0.8)
+# Turn 4+: drift_health = 1 - max(0, (baseline_mean - current_cosine) / baseline_std)
+This matches "drift" semantically — it's change over time, not distance from some absolute ideal.
+
+Validation test: Re-run the expense tracker baseline (deterministic) with the fixed drift computation. Check whether CHI now moves through a meaningful range (at least 0.15 wide) over the 25-turn run. If yes, the fix works. If CHI is still pinned, escalate to the next option.
+PART E.3 — Cold-start grace (15 min)
+Simple fix: for turns 0-1, return chi_score = 0.85 (neutral healthy) regardless of signals. The CHI monitor needs at least 2 turns of history to produce meaningful measurements. This also prevents steering from activating on turn 0 for the wrong reason.
+In cognition_engine/chi.py update():
+pythonif self.turn_count < 2:
+    chi_smoothed = 0.85  # cold start neutral
+    # still log raw signals for debugging
+PART E.4 — Threshold recalibration (1 hour)
+After fixing drift and cold start, re-run the expense tracker task in baseline mode and look at the actual CHI distribution over turns. Set thresholds based on observed data, not guesses:
+
+Steering activation: the CHI level where the baseline run starts producing the auto-save bug
+Compaction: the CHI level where the baseline run enters think-loop
+Cloud escalation: catastrophic (probably don't set, or set very low)
+
+Update STEERING_ACTIVATE_THRESHOLD, STEERING_DEACTIVATE_THRESHOLD, COMPACTION_CHI_THRESHOLD in agent.py based on the observed distribution.
+PART E.5 — Verify TASK-047C claim still holds with fixed CHI (30 min)
+Re-run baseline and steering on the expense tracker with fixed CHI. Check:
+
+Does baseline still produce the auto-save bug?
+Does steering still produce the explicit save/load pattern?
+Is steering still active for most/all turns, or does the fixed CHI now make it intermittent?
+If steering is intermittent, does the outcome change?
+
+This tells us whether TASK-047C's result was an artifact of always-on steering (a design bug) or a real effect that holds under proper CHI gating.
+PART E.6 — Deliverable
+Paste back:
+
+Per-turn CHI trace (full raw signals) for baseline and steering after fixes
+Whether CHI now has meaningful range
+Whether steering still produces different code than baseline under the new regime
+Recommended new threshold values based on observed CHI **distribution**
 ---
 
 ### TASK-048: Evaluate Qwen3.5-9B on MLX

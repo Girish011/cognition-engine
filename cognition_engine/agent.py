@@ -34,8 +34,11 @@ from cognition_engine.session import SessionManager
 STEERING_VECTOR = "tool_format"
 STEERING_LAYER = 16
 STEERING_ALPHA = 0.5
-STEERING_ACTIVATE_THRESHOLD = 0.7
-STEERING_DEACTIVATE_THRESHOLD = 0.8
+# TASK-047E: recalibrated from observed CHI distribution on expense tracker baseline.
+# Old values (0.7/0.8) were set before drift fix — CHI was pinned in 0.67-0.69 band,
+# so steering was always-on. New values reflect actual healthy range (0.82-0.95).
+STEERING_ACTIVATE_THRESHOLD = 0.85
+STEERING_DEACTIVATE_THRESHOLD = 0.90
 
 # ------------------------------------------------------------------
 # Compaction / escalation tuning (TASK-046)
@@ -776,6 +779,19 @@ class CognitionAgent:
             chi_score = 0.0
             chi_raw = 0.0
 
+        # TASK-047E: full raw signal trace for debugging
+        chi_signals = {}
+        if chi_result is not None:
+            for key in (
+                "entropy_raw", "entropy_health",
+                "repetition_raw", "repetition_health", "repetition_gated",
+                "goal_drift_raw", "goal_drift_health", "goal_drift_cosine",
+                "drift_baseline_mean", "drift_baseline_std",
+                "response_token_count", "cold_start",
+            ):
+                if key in chi_result:
+                    chi_signals[key] = chi_result[key]
+
         # Prefer an action tool if the model emitted think+action in one turn.
         tool_used = "none"
         if tool_calls:
@@ -824,6 +840,7 @@ class CognitionAgent:
                 "context_length": ctx_tokens,
                 "files_modified": list(self.anchor_mgr.files_modified),
                 "response_preview": response[:100],
+                **chi_signals,  # TASK-047E: full raw signal trace
             }
         self.turn_log.append(row)
 

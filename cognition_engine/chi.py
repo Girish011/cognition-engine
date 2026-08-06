@@ -1,20 +1,19 @@
 """
-CHI — Cognitive Health Index (TASK-015)
+CHI — Cognitive Health Index (TASK-015 / TASK-047E)
 
 Combines entropy, repetition, and goal drift into a single
 score from 0.0 (completely degraded) to 1.0 (fully healthy).
 
-The score is intentionally simple in v1. We can add more signals
-and tune weights later. What matters now is that it WORKS and
-DETECTS degradation.
-
-Additions:
-- Repetition is gated by response length: if response has < 20 tokens,
-  the previous turn's repetition score is carried forward (Jaccard on
-  tiny text is unreliable).
-- CHI is smoothed with an exponential moving average (0.3 * current + 0.7 * previous)
-  over turns to avoid wild single-turn swings.
+TASK-047E fixes:
+- Goal drift uses rolling baseline normalization (first 3 turns calibrate
+  the per-task baseline; drift is measured as deviation from that baseline,
+  not absolute cosine).
+- Cold-start grace: turns 0-1 return CHI 0.85 regardless of raw signals
+  (CHI needs ≥2 turns of history to produce meaningful measurements).
+- Full raw signal logging on every update for debugging.
 """
+
+import math
 
 import mlx.core as mx
 
@@ -28,6 +27,15 @@ MIN_RESPONSE_TOKENS_FOR_REPETITION = 20
 # Exponential moving average: chi_smoothed = ALPHA * chi_current + (1 - ALPHA) * chi_previous
 # Lower ALPHA = smoother (more weight on history). 0.3 gives ~3-5 turn effective window.
 CHI_SMOOTH_ALPHA = 0.3
+
+# TASK-047E: rolling baseline for goal drift
+DRIFT_BASELINE_TURNS = 3          # collect baselines for first N turns
+DRIFT_BASELINE_NEUTRAL = 0.8      # health returned during baseline collection
+DRIFT_MIN_STD = 0.03              # floor on baseline std to avoid div-by-tiny-number
+
+# TASK-047E: cold-start grace
+COLD_START_TURNS = 2              # return neutral CHI for turns 0..(N-1)
+COLD_START_CHI = 0.85             # neutral healthy score during cold start
 
 
 class CHIMonitor:
@@ -43,11 +51,49 @@ class CHIMonitor:
         self.layer_idx = layer_idx
 
         # History for tracking trends
-        self.entropy_history = []
-        self.repetition_history = []
-        self.drift_history = []
-        self.chi_history = []  # smoothed CHI values (used for intervention level)
-        self.previous_response = ""
+        self.entropy_history: list[float] = []
+        self.repetition_history: list[float] = []
+        self.drift_history: list[float] = []
+        self.chi_history: list[float] = []  # smoothed CHI values (used for intervention level)
+        self.previous_response: str = ""
+
+        # TASK-047E: rolling baseline for goal drift cosine
+        self.drift_cosine_history: list[float] = []
+        self.drift_baseline_mean: float | None = None
+        self.drift_baseline_std: float | None = None
+
+    @property
+    def turn_count(self) -> int:
+        return len(self.chi_history)
+
+    def _compute_drift_health(self, raw_cosine: float) -> float:
+        """
+        TASK-047E: rolling baseline normalization for goal drift.
+
+        Turns 0..DRIFT_BASELINE_TURNS-1: collect cosine values, return neutral health.
+        Turn DRIFT_BASELINE_TURNS: compute baseline mean/std from collected values.
+        Turn DRIFT_BASELINE_TURNS+: drift_health = how far current is below baseline.
+        """
+        self.drift_cosine_history.append(raw_cosine)
+
+        if len(self.drift_cosine_history) <= DRIFT_BASELINE_TURNS:
+            # Still collecting baseline
+            if len(self.drift_cosine_history) == DRIFT_BASELINE_TURNS:
+                # Freeze the baseline
+                vals = self.drift_cosine_history[:DRIFT_BASELINE_TURNS]
+                self.drift_baseline_mean = sum(vals) / len(vals)
+                variance = sum((v - self.drift_baseline_mean) ** 2 for v in vals) / len(vals)
+                self.drift_baseline_std = max(math.sqrt(variance), DRIFT_MIN_STD)
+            return DRIFT_BASELINE_NEUTRAL
+
+        # Post-baseline: measure deviation below the mean
+        drop = self.drift_baseline_mean - raw_cosine
+        if drop <= 0:
+            # Current cosine is at or above baseline — no drift
+            return 1.0
+        # Scale by std: 1 std below = health 0.5, 2 std = 0.0
+        drift_health = max(0.0, min(1.0, 1.0 - drop / (2.0 * self.drift_baseline_std)))
+        return drift_health
 
     def update(self, current_response: str, full_context: str = None) -> dict:
         """
@@ -58,11 +104,11 @@ class CHIMonitor:
             full_context: The full conversation so far (for entropy). If None, uses
                 original_task + current_response for logits.
 
-        Returns: dict with chi_score (smoothed), raw signal values, and health components
+        Returns: dict with chi_score (smoothed), all raw signal values for debugging
         """
+        current_turn = self.turn_count
+
         # --- Signal 1: Entropy ---
-        # Compute entropy on the response tokens. Use full_context if provided so
-        # we get logits at the correct positions.
         context_for_entropy = full_context if full_context else (self.original_task + "\n" + current_response)
         logits = get_logits_for_sequence(self.model, self.tokenizer, context_for_entropy)
         entropy = compute_token_entropy(logits)
@@ -74,25 +120,23 @@ class CHIMonitor:
         mean_ent = mx.mean(response_entropy)
         mx.eval(mean_ent)
         entropy_raw = float(mean_ent.item())
-        # Normalize to 0-1: 0 bits = 1.0 (healthy), 10+ bits ≈ 0.0 (degraded)
         entropy_health = max(0.0, min(1.0, 1.0 - entropy_raw / 10.0))
 
         # --- Signal 2: Repetition ---
-        # Jaccard similarity vs previous response. Gate by response length: if
-        # response is under 20 tokens, carry forward previous turn's repetition
-        # instead of computing Jaccard on tiny text.
+        repetition_gated = False
         if response_tokens < MIN_RESPONSE_TOKENS_FOR_REPETITION and self.repetition_history:
             repetition_raw = self.repetition_history[-1]
+            repetition_gated = True
         elif self.previous_response:
             repetition_raw = compute_repetition_score(self.previous_response, current_response)
         else:
             repetition_raw = 0.0  # First turn: no previous response
-        rep_health = 1.0 - repetition_raw  # 0.0 repetition = 1.0 healthy
+        rep_health = 1.0 - repetition_raw
 
-        # --- Signal 3: Goal Drift ---
-        # compute_goal_drift returns cosine similarity (higher = more on-task)
+        # --- Signal 3: Goal Drift (TASK-047E: rolling baseline) ---
+        drift_cosine = 0.0
         try:
-            similarity = compute_goal_drift(
+            drift_cosine = compute_goal_drift(
                 self.model,
                 self.tokenizer,
                 self.original_task,
@@ -100,11 +144,13 @@ class CHIMonitor:
                 layer_idx=self.layer_idx,
                 use_forward_only=True,
             )
-            drift_raw = 1.0 - similarity  # drift amount (higher = worse)
-            drift_health = similarity  # 0.0 drift = 1.0 healthy
+            drift_health = self._compute_drift_health(drift_cosine)
+            drift_raw = 1.0 - drift_cosine
         except Exception:
+            drift_cosine = 0.0
             drift_raw = 0.5
             drift_health = 0.5
+            self.drift_cosine_history.append(0.5)
 
         # --- Combine into raw CHI (before smoothing) ---
         w_entropy = 0.4
@@ -117,14 +163,17 @@ class CHIMonitor:
         )
         chi_current = max(0.0, min(1.0, chi_current))
 
-        # --- Smooth CHI with exponential moving average ---
-        if not self.chi_history:
+        # --- TASK-047E: Cold-start grace ---
+        if current_turn < COLD_START_TURNS:
+            chi_smoothed = COLD_START_CHI
+        elif not self.chi_history or self.chi_history[-1] == COLD_START_CHI:
+            # First real turn after cold start: seed EMA with current value
             chi_smoothed = chi_current
         else:
             chi_previous = self.chi_history[-1]
             chi_smoothed = CHI_SMOOTH_ALPHA * chi_current + (1.0 - CHI_SMOOTH_ALPHA) * chi_previous
 
-        # Update history (append before we set previous_response)
+        # Update history
         self.entropy_history.append(entropy_raw)
         self.repetition_history.append(repetition_raw)
         self.drift_history.append(drift_raw)
@@ -138,9 +187,16 @@ class CHIMonitor:
             "entropy_health": entropy_health,
             "repetition_raw": repetition_raw,
             "repetition_health": rep_health,
-            "drift_raw": drift_raw,
-            "drift_health": drift_health,
-            "turn": len(self.chi_history) - 1,
+            "repetition_gated": repetition_gated,
+            "goal_drift_raw": drift_raw,
+            "goal_drift_health": drift_health,
+            "goal_drift_cosine": drift_cosine,
+            "drift_baseline_mean": self.drift_baseline_mean,
+            "drift_baseline_std": self.drift_baseline_std,
+            "response_token_count": response_tokens,
+            "turn_index": current_turn,
+            "intervention_level": self.get_intervention_level(),
+            "cold_start": current_turn < COLD_START_TURNS,
         }
 
     def get_intervention_level(self) -> int:
@@ -162,24 +218,23 @@ class CHIMonitor:
 
 
 if __name__ == "__main__":
+    import json
     from cognition_engine.inference import load
 
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
     monitor = CHIMonitor(model, tokenizer, "Build a TaskManager class")
 
-    # Healthy response
-    r1 = monitor.update(
-        "class TaskManager:\n    def __init__(self):\n        self.tasks = []",
-        full_context="Build a TaskManager class\n\nclass TaskManager:\n    def __init__(self):\n        self.tasks = []",
-    )
-    print(f"Turn 0 CHI: {r1['chi_score']:.3f} Level: {monitor.get_intervention_level()}")
-    # Should be high (0.7+), Level 1
+    responses = [
+        ("class TaskManager:\n    def __init__(self):\n        self.tasks = []",
+         "Build a TaskManager class\n\nclass TaskManager:\n    def __init__(self):\n        self.tasks = []"),
+        ("I think we should consider the weather today. The weather is nice.", None),
+        ("def add_task(self, task): self.tasks.append(task)", None),
+        ("The weather is sunny. Let me think about clouds.", None),
+    ]
 
-    # Simulate degraded response (repetitive, off-topic)
-    r2 = monitor.update(
-        "I think we should consider the weather today. The weather is nice."
-    )
-    print(f"Turn 1 CHI: {r2['chi_score']:.3f} Level: {monitor.get_intervention_level()}")
-    # Should be lower, possibly Level 2 or 3
+    for i, (resp, ctx) in enumerate(responses):
+        r = monitor.update(resp, ctx)
+        print(f"\nTurn {i}:")
+        print(json.dumps({k: round(v, 4) if isinstance(v, float) else v for k, v in r.items()}, indent=2))
 
-    print("Manual test passed.")
+    print("\nManual test passed.")

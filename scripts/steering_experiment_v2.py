@@ -96,7 +96,7 @@ def run_condition(
                 "chi_raw": chi_out["chi_raw"],
                 "entropy": chi_out["entropy_raw"],
                 "repetition": chi_out["repetition_raw"],
-                "goal_drift": chi_out["drift_raw"],
+                "goal_drift": chi_out["goal_drift_raw"],
                 "response_length": response_len,
                 "context_length": context_len,
                 "response_preview": response[:100],

@@ -72,7 +72,7 @@ def run_chat(args: argparse.Namespace) -> None:
             print(f"\n{color}[CHI: {chi:.3f} | Level {level}]\033[0m "
                   f"E={result['entropy_health']:.2f} "
                   f"R={result['repetition_health']:.2f} "
-                  f"D={result['drift_health']:.2f}\n")
+                  f"D={result['goal_drift_health']:.2f}\n")
 
         except KeyboardInterrupt:
             print("\n\nSession ended.")

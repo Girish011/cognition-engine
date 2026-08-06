@@ -49,27 +49,30 @@ def compute_goal_drift(
     if task_states is None or output_states is None:
         raise ValueError("Hidden state extraction returned None")
 
-    # Task: mean over sequence (short text). Output: for long sequences use last-token
-    # hidden state only; averaging over 300+ positions can produce degenerate (e.g. ~0)
-    # similarity due to scale/numerics. Last token encodes the full sequence in causal LMs.
-    task_vec = mx.mean(task_states, axis=(0, 1))
-    seq_len = output_states.shape[1]
+    # TASK-047E: cast to float32 before pooling — float16 hidden states
+    # overflow to inf when mean-pooled over long sequences, producing NaN cosine.
+    task_states = task_states.astype(mx.float32)
+    output_states = output_states.astype(mx.float32)
+
+    # For long sequences use last-token hidden state (encodes full sequence in causal LMs).
     max_mean_positions = 128
-    if seq_len > max_mean_positions:
-        output_vec = output_states[0, -1, :]  # (hidden_dim,)
+
+    task_seq_len = task_states.shape[1]
+    if task_seq_len > max_mean_positions:
+        task_vec = task_states[0, -1, :]
+    else:
+        task_vec = mx.mean(task_states, axis=(0, 1))
+
+    output_seq_len = output_states.shape[1]
+    if output_seq_len > max_mean_positions:
+        output_vec = output_states[0, -1, :]
     else:
         output_vec = mx.mean(output_states, axis=(0, 1))
 
-    # Numerically stable cosine: scale to avoid overflow, then unit vectors
-    scale_a = mx.max(mx.abs(task_vec)) + 1e-12
-    scale_b = mx.max(mx.abs(output_vec)) + 1e-12
-    a = task_vec / scale_a
-    b = output_vec / scale_b
-    na = mx.sqrt(mx.sum(a**2) + 1e-12)
-    nb = mx.sqrt(mx.sum(b**2) + 1e-12)
-    a_unit = a / na
-    b_unit = b / nb
-    cos_sim = mx.sum(a_unit * b_unit)
+    # Cosine similarity with unit vectors
+    na = mx.sqrt(mx.sum(task_vec ** 2) + 1e-12)
+    nb = mx.sqrt(mx.sum(output_vec ** 2) + 1e-12)
+    cos_sim = mx.sum((task_vec / na) * (output_vec / nb))
 
     mx.eval(cos_sim)
     out = float(cos_sim.item())
