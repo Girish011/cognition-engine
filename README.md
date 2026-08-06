@@ -29,7 +29,7 @@ This is what degradation looks like over a 20-turn conversation. Entropy and goa
 ## Quick start
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/Girish011/cognition-engine.git
 cd cognition-engine
 pip install -e .
 pip install mlx mlx-lm
