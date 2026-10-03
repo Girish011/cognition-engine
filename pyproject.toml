@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cognition-engine"
 version = "0.1.0"
-description = "Monitor cognitive health of LLM conversations via CHI (Cognitive Health Index)"
+description = "A study of mid-execution correction for local LLM agents: CHI health monitoring, activation steering, and context compaction on MLX"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -21,9 +21,15 @@ classifiers = [
 ]
 
 dependencies = [
-    "mlx",
-    "mlx-lm",
+    "numpy",
+    # MLX only ships wheels for Apple Silicon macOS; elsewhere the pure-Python
+    # parts (parser, memory, sessions, steering-vector math) still import.
+    "mlx; sys_platform == 'darwin'",
+    "mlx-lm; sys_platform == 'darwin'",
 ]
+
+[project.scripts]
+cognition-engine = "cognition_engine.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -31,6 +37,10 @@ dev = [
     "pytest",
 ]
 
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cognition_engine*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

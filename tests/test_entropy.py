@@ -1,9 +1,10 @@
 """Unit tests for cognition_engine.entropy."""
 
 import pytest
-import mlx.core as mx
 
-from cognition_engine.entropy import compute_token_entropy
+mx = pytest.importorskip("mlx.core")
+
+from cognition_engine.entropy import compute_token_entropy  # noqa: E402
 
 
 def test_compute_token_entropy_shape():

@@ -19,3 +19,5 @@ data/steering_vectors/*.npz
 # Runtime artifacts from agent experiments
 expenses.json
 *.log
+# Agent runtime state
+.cognition/

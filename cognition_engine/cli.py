@@ -152,6 +152,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Cognition Engine — tool-calling agent with CHI monitoring"
     )
+    # Top-level flags keep the legacy `python -m cognition_engine --model ...` form working.
+    parser.add_argument(
+        "--model", default="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
+    )
+    parser.add_argument("--max-tokens", type=int, default=500)
     subparsers = parser.add_subparsers(dest="command")
 
     # Chat mode
@@ -202,12 +207,7 @@ def main() -> None:
         return
 
     # Backward compatible default: no subcommand => chat mode
-    run_chat(
-        argparse.Namespace(
-            model=getattr(args, "model", "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"),
-            max_tokens=getattr(args, "max_tokens", 500),
-        )
-    )
+    run_chat(args)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,4 @@
-The documentation for `steering_design.md` file, incorporating proposed structure and integrating the practical insights from the 2026 Practitioner's Field Guide and the CAST paper.
-
-***
-
-# steering_design.md
+# Steering design notes
 
 ### 1. The core algorithm (3 steps)
 Activation steering operates on the residual stream of the model without requiring any weight fine-tuning. The core algorithm consists of three straightforward steps:
@@ -45,3 +41,9 @@ Level 2 (CHI < 0.7): Activate steering vectors — milliseconds latency
 Level 3 (CHI < 0.5): Context compaction + SCAN anchors — 2-3 seconds
 Level 4 (CHI < 0.3): Cloud escalation — API latency
 ```
+
+### 6. What we learned building it
+
+See [FINDINGS.md](FINDINGS.md). In short: the layer-16 / low-alpha recipe is the only
+setting that stayed stable, `task_focus` killed output, and the effect on task outcomes
+was not distinguishable from "always-on prior" behaviour.

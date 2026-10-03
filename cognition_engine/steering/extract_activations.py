@@ -116,24 +116,22 @@ def extract_contrastive_activations(
     }
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Extract activations for every pair set -> data/activations_<name>.npz."""
     from mlx_lm import load
 
     model, tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
     pairs = get_all_pairs()
 
-    print("Extracting activations for task_focus pairs...")
-    result = extract_contrastive_activations(
-        model,
-        tokenizer,
-        pairs["task_focus"],
-        "task_focus",
-    )
-
-    print(f"Positive shape: {result['positive'].shape}")
-    print(f"Negative shape: {result['negative'].shape}")
-
     os.makedirs("data", exist_ok=True)
-    np.savez("data/activations_task_focus.npz", **result)
-    print("Saved to data/activations_task_focus.npz")
+    for name, pair_set in pairs.items():
+        print(f"Extracting activations for {name} pairs...")
+        result = extract_contrastive_activations(model, tokenizer, pair_set, name)
+        print(f"  positive {result['positive'].shape}, negative {result['negative'].shape}")
+        out = f"data/activations_{name}.npz"
+        np.savez(out, **result)
+        print(f"  saved {out}")
 
+
+if __name__ == "__main__":
+    main()
