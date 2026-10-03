@@ -1,8 +1,6 @@
-"""CHI pure-logic tests. Need mlx (imported by cognition_engine.chi); skipped elsewhere."""
+"""CHI pure-logic tests (no model; mlx is stubbed off Apple Silicon)."""
 
 import pytest
-
-pytest.importorskip("mlx.core")
 
 from cognition_engine.chi import (  # noqa: E402
     DRIFT_BASELINE_NEUTRAL,

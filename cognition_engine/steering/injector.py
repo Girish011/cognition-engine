@@ -20,14 +20,14 @@ def compute_adaptive_alpha(chi_score: float, base_alpha: float = 0.5) -> float:
 
     TASK-047E: recalibrated to match new CHI range (0.82-0.95 healthy).
     CHI >= 0.90 -> alpha = 0.0 (healthy, no steering needed)
-    CHI >= 0.30 -> linear ramp from 0.0 (CHI=0.90) to 1.5*base (CHI=0.30)
+    CHI >= 0.30 -> linear ramp from 0.6*base (CHI just under 0.90) to 1.5*base (CHI=0.30)
     CHI < 0.30 -> alpha = 1.5*base (capped; escalate to Level 3/4)
     """
     if chi_score >= 0.90:
         return 0.0
     if chi_score >= 0.30:
         t = (0.90 - chi_score) / 0.60  # 0.0 at CHI=0.90, 1.0 at CHI=0.30
-        return float(base_alpha) * (0.6 + t * 0.9)
+        return min(float(base_alpha) * (0.6 + t * 0.9), float(base_alpha) * 1.5)
     return float(base_alpha) * 1.5
 
 

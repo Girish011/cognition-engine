@@ -36,6 +36,7 @@ Issues = "https://github.com/Girish011/cognition-engine/issues"
 cognition-engine = "cognition_engine.cli:main"
 
 [project.optional-dependencies]
+escalation = ["anthropic"]
 dev = [
     "matplotlib",
     "pytest",

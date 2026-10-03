@@ -51,15 +51,26 @@ python -m cognition_engine status --dir /tmp/demo
 
 ### Enabling steering (`--enable-steering`)
 
-Steering vectors are derived data and are not committed. Build them once (needs the model):
+Steering vectors are derived data and are not committed. Build them once (needs the model, a few minutes):
 
 ```bash
-python -m cognition_engine.steering.extract_activations   # data/activations_*.npz
-python -m cognition_engine.steering.compute_vectors       # data/steering_vectors/*.npz
+python -m cognition_engine steering-build        # writes data/steering_vectors/*.npz
 python -m cognition_engine agent --task "..." --dir /tmp/demo --enable-steering
+# --steering-mode always_on   steer from turn 0 instead of only while CHI is low
 ```
 
-Without the vectors the agent prints a warning and runs with steering disabled.
+Without the vectors the agent prints the build command and runs with steering disabled.
+
+### Level 4 escalation (`--escalate anthropic`, optional)
+
+When CHI falls below 0.3 the agent can ask a stronger model for a short piece of guidance, which is
+injected as a system message; the local model still takes every action. It is off by default and
+sends the task and recent transcript to the Anthropic API.
+
+```bash
+pip install -e ".[escalation]" && export ANTHROPIC_API_KEY=...
+python -m cognition_engine agent --task "..." --dir /tmp/demo --escalate anthropic
+```
 
 ## How it works
 
@@ -71,7 +82,7 @@ per-task drift baseline, a 2-turn cold-start grace and EMA smoothing.
 | 1 | > 0.8 | normal |
 | 2 | 0.5-0.8 | activation steering (alpha scales with how low CHI is) |
 | 3 | 0.3-0.5 | context compaction + anchor tokens |
-| 4 | < 0.3 | escalation hook (logged only; no cloud call is wired up) |
+| 4 | < 0.3 | optional escalation: advice from a stronger model (`--escalate anthropic`) |
 
 Details and module map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · steering notes:
 [docs/steering_design.md](docs/steering_design.md).
@@ -85,6 +96,8 @@ Details and module map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · steering
 | `scripts/steering_experiment.py`, `steering_experiment_v2.py`, `steering_sweep.py` | steering on/off comparisons and the layer × alpha sweep |
 | `scripts/test_steering_agent.py` | agent A/B in `baseline`, `steering`, `full_ladder` modes |
 | `scripts/run_task047c.sh`, `run_task047d.sh`, `extract_047d_metrics.py` | expense-tracker comparison and replication harness |
+| `scripts/run_long_experiment.sh` | **the open experiment**: 6-step task under baseline / CHI-triggered / always-on steering / full ladder |
+| `scripts/summarize_runs.py` | table of completion, CHI range (flags a pinned CHI), levels reached, interventions fired |
 
 Recorded results are in [`data/`](data).
 
@@ -104,7 +117,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). If you use this work, see [CITATION.cff]
 ## Limitations
 
 Single model (Qwen2.5-Coder-7B 4-bit), single machine, small task set, no statistical claims.
-Levels 3-4 never fired in agent runs because tasks completed first. See
+Levels 3-4 never fired in agent runs because tasks completed first, and the long-task policy comparison (`scripts/run_long_experiment.sh`) has not been run yet. See
 [docs/FINDINGS.md](docs/FINDINGS.md#limitations-and-next-experiments) for open experiments.
 
 ## License

@@ -2,9 +2,13 @@
 
 import pytest
 
-mx = pytest.importorskip("mlx.core")
+import mlx.core as mx
 
-from cognition_engine.entropy import compute_token_entropy  # noqa: E402
+from tests.conftest import HAS_REAL_MLX
+
+pytestmark = pytest.mark.skipif(not HAS_REAL_MLX, reason="needs real MLX (Apple Silicon)")
+
+from cognition_engine.entropy import compute_token_entropy
 
 
 def test_compute_token_entropy_shape():

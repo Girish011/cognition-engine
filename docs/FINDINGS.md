@@ -55,8 +55,16 @@ changes are in the code; a before/after replication on a long task was not compl
 ## Limitations and next experiments
 
 - Single model, single machine, small task set; no statistical claims.
-- No task long enough (15+ turns) to reach the degradation regime *and* complete, so Levels 3-4
-  never fired in agent runs.
-- Open: validate the recalibrated CHI on a 25-turn task; compare steering switched on only after
-  a CHI drop against always-on; try a larger model (14B) and a hybrid-attention model
-  (Qwen3.5 / DeltaNet), where steering targets may differ.
+- No task has yet been long enough (15+ turns) to reach the degradation regime *and* complete, so
+  Levels 3-4 never fired in agent runs.
+
+**Ready to run, results pending.** `scripts/run_long_experiment.sh` runs a 6-step, multi-module
+task under four policies (baseline, CHI-triggered steering, always-on steering, full ladder) and
+`scripts/summarize_runs.py` tabulates them, including whether the recalibrated CHI now spans a
+usable range (≥ 0.15) rather than being pinned. The key question it answers: does steering that
+switches on *after* a CHI drop beat the always-on control? Until it is run, claim 5 above stays
+"not shown". Level 4 escalation (`--escalate anthropic`) is implemented and unit-tested with a fake
+advisor but has not been evaluated.
+
+Other open directions: a larger model (14B) and a hybrid-attention model (Qwen3.5 / DeltaNet),
+where steering targets may differ.

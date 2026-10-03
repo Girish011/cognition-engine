@@ -19,6 +19,7 @@ from mlx_lm import stream_generate
 
 from cognition_engine.chi import CHIMonitor
 from cognition_engine.compaction import ContextCompactor
+from cognition_engine.escalation import Escalator
 from cognition_engine.anchors import AnchorManager
 from cognition_engine.memory import WorkingMemory
 from cognition_engine.prompts import (
@@ -45,6 +46,12 @@ STEERING_DEACTIVATE_THRESHOLD = 0.90
 # ------------------------------------------------------------------
 COMPACTION_CHI_THRESHOLD = 0.65  # was 0.50
 COMPACTION_GRACE_TURNS = 3
+ESCALATION_CHI_THRESHOLD = 0.3  # Level 4
+ESCALATION_COOLDOWN_TURNS = 5   # minimum turns between escalation calls
+
+# Steering policies: "chi" turns steering on/off from CHI (hysteresis band);
+# "always_on" applies it from turn 0 (the control condition for the CHI-triggered policy).
+STEERING_MODES = ("chi", "always_on")
 STEERING_TIMEOUT_TURNS = 5  # was 8 (lowered because tasks complete sooner now)
 
 # TASK-045: filenames mentioned in the task text (relative paths, common extensions)
@@ -179,8 +186,15 @@ class CognitionAgent:
         *,
         enable_steering: bool = False,
         enable_compaction: bool = True,
+        steering_mode: str = "chi",
+        escalator: Optional[Escalator] = None,
         turn_log: Optional[List[Dict]] = None,
     ):
+        if steering_mode not in STEERING_MODES:
+            raise ValueError(f"steering_mode must be one of {STEERING_MODES}, got {steering_mode!r}")
+        self.steering_mode = steering_mode
+        self.escalator = escalator
+        self._last_escalation_turn: Optional[int] = None
         self.model = model
         self.tokenizer = tokenizer
         self.task = task
@@ -251,23 +265,35 @@ class CognitionAgent:
                     alpha=STEERING_ALPHA,
                     normalize=False,
                 )
-                # Start inactive; CHI controls activation.
-                self.steering.deactivate()
                 self.steering_alpha_current = STEERING_ALPHA
-                print(
-                    f"[STEERING] Loaded {STEERING_VECTOR} at layer {STEERING_LAYER}, "
-                    f"alpha={STEERING_ALPHA} (inactive until CHI < {STEERING_ACTIVATE_THRESHOLD})"
-                )
+                if self.steering_mode == "always_on":
+                    self.steering.set_alpha(STEERING_ALPHA)
+                    self.steering.activate()
+                    self.steering_active = True
+                    print(
+                        f"[STEERING] Loaded {STEERING_VECTOR} at layer {STEERING_LAYER}, "
+                        f"alpha={STEERING_ALPHA} (always on)"
+                    )
+                else:
+                    # Start inactive; CHI controls activation.
+                    self.steering.deactivate()
+                    print(
+                        f"[STEERING] Loaded {STEERING_VECTOR} at layer {STEERING_LAYER}, "
+                        f"alpha={STEERING_ALPHA} (inactive until CHI < {STEERING_ACTIVATE_THRESHOLD})"
+                    )
 
                 # If resuming an interrupted session, restore steering_active state.
                 if self.session_mgr.has_interrupted_session():
                     session = self.session_mgr.load_session()
-                    if session and session.steering_active:
+                    if session and session.steering_active and self.steering_mode == "chi":
                         self.steering.activate()
                         self.steering_active = True
                         print("[STEERING] Restored active steering from interrupted session.")
             except FileNotFoundError:
-                print("[STEERING] Warning: vectors not found; steering disabled")
+                print(
+                    "[STEERING] Warning: steering vectors not found in data/steering_vectors; "
+                    "steering disabled. Build them with: python -m cognition_engine steering-build"
+                )
                 self.enable_steering = False
                 self.steering = None
             except Exception as e:  # noqa: BLE001
@@ -495,7 +521,11 @@ class CognitionAgent:
 
                 # 6. Display status
                 chi = chi_result["chi_score"]
-                if self.enable_steering and self.steering is not None:
+                if (
+                    self.enable_steering
+                    and self.steering is not None
+                    and self.steering_mode == "chi"
+                ):
                     from cognition_engine.steering.injector import compute_adaptive_alpha
 
                     # TASK-042: adaptive proportional control (P-only).
@@ -585,11 +615,8 @@ class CognitionAgent:
                             else:
                                 self.compactor.compact("trim")
                                 print("  [COMPACTION: trim]")
-                    if chi < 0.3:
-                        print(
-                            "[LEVEL 4] Cloud escalation threshold (CHI < 0.3) — "
-                            "would escalate (not implemented)"
-                        )
+
+                escalation_fired = self._maybe_escalate(chi)
 
                 compaction_fired = self.compactor.compaction_count > c_before
                 strat = (
@@ -606,7 +633,12 @@ class CognitionAgent:
                     self._steering_active_turns = 0
                     # TASK-047: compaction changes context; reset duplicate-write state.
                     self._last_write_hash.clear()
-                    if self.enable_steering and self.steering is not None and self.steering_active:
+                    if (
+                        self.enable_steering
+                        and self.steering is not None
+                        and self.steering_active
+                        and self.steering_mode == "chi"
+                    ):
                         self.steering.deactivate()
                         self.steering_active = False
                         print("[STEERING] Reset: deactivated after compaction.")
@@ -620,6 +652,7 @@ class CognitionAgent:
                         compaction_fired=compaction_fired,
                         compaction_strategy=strat,
                         prompt_tokens_len=prompt_tokens_len,
+                        escalation_fired=escalation_fired,
                     )
 
                 # TASK-045F: no parseable tool for several turns (degenerate output loop)
@@ -718,6 +751,32 @@ class CognitionAgent:
 
             self._print_summary()
 
+    def _maybe_escalate(self, chi: float) -> bool:
+        """Level 4: ask the escalator for guidance when CHI collapses. Returns True if fired."""
+        if chi >= ESCALATION_CHI_THRESHOLD:
+            return False
+        if self.escalator is None:
+            print("[LEVEL 4] CHI < 0.3 — no escalator configured (use --escalate anthropic)")
+            return False
+        last = self._last_escalation_turn
+        if last is not None and self.turn_count - last < ESCALATION_COOLDOWN_TURNS:
+            return False
+        self._last_escalation_turn = self.turn_count
+        try:
+            advice = self.escalator.advise(
+                self.task,
+                list(self.compactor.conversation_turns[-8:]),
+                list(self.anchor_mgr.files_modified),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[LEVEL 4] Escalation failed: {exc}")
+            return False
+        if not advice:
+            return False
+        print(f"[LEVEL 4] Escalated at turn {self.turn_count} — injecting advice.")
+        self.compactor.add_turn("system", f"[ADVISOR GUIDANCE]\n{advice}")
+        return True
+
     def _format_context_for_model(self, context_turns: List[Tuple[str, str]]) -> str:
         """
         Convert compactor's (role, content) turns into Qwen chat template.
@@ -765,6 +824,7 @@ class CognitionAgent:
         compaction_fired: bool,
         compaction_strategy: Optional[str],
         prompt_tokens_len: Optional[int],
+        escalation_fired: bool = False,
     ) -> None:
         """Append one TASK-044-style turn record (requires turn_log list in __init__)."""
         if self.turn_log is None:
@@ -833,6 +893,7 @@ class CognitionAgent:
                 else 0.0,
                 "compaction_fired": compaction_fired,
                 "compaction_strategy": compaction_strategy,
+                "escalation_fired": escalation_fired,
                 "tool_used": tool_used,
                 "execute_command": exec_command,
                 "execute_exit_code": exec_exit_code,

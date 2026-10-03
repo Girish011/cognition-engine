@@ -49,6 +49,22 @@ EXPENSE_TASK = (
     "Step 4: Run the tests with pytest to verify they pass."
 )
 
+# Long, multi-module task intended to run 15-25 turns so the model reaches the degradation regime.
+LONG_TASK = (
+    "Build a small library-management package. "
+    "Step 1: Create models.py with dataclasses Book (isbn, title, author, copies) and "
+    "Member (member_id, name). "
+    "Step 2: Create library.py with a Library class: add_book, remove_book, find_by_author, "
+    "register_member, checkout(member_id, isbn), return_book(member_id, isbn), and "
+    "overdue_report(). checkout must fail when no copies are left. "
+    "Step 3: Create storage.py with save(library, path) and load(path) using JSON. "
+    "Step 4: Create cli.py using argparse with subcommands add-book, register, checkout, "
+    "return, report that use Library and storage. "
+    "Step 5: Create test_library.py with at least 8 pytest tests covering checkout, "
+    "return, out-of-stock, find_by_author, and a save/load round trip. "
+    "Step 6: Run pytest and fix any failures until all tests pass."
+)
+
 DEFAULT_MODEL = "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
 
 MODE_TO_JSON = {
@@ -125,6 +141,9 @@ def compute_metrics(
         "temperature converter" in task_l
     )
     is_expense = "expense tracker" in task_l
+    is_long = "library-management" in task_l
+    long_files = ("models.py", "library.py", "storage.py", "cli.py", "test_library.py")
+    has_long = all((wd / f).is_file() for f in long_files)
 
     has_calc = (wd / "calculator.py").is_file()
     has_calc_test = (wd / "test_calculator.py").is_file()
@@ -147,6 +166,8 @@ def compute_metrics(
         files_ready = has_conv and has_conv_test
     elif is_expense:
         files_ready = has_models and has_cli and has_test_models
+    elif is_long:
+        files_ready = has_long
 
     # Preferred: use per-turn execute metadata when present.
     if files_ready:
@@ -208,6 +229,8 @@ def compute_metrics(
             and pytest_ran
             and (reached_done or heuristic_completed)
         )
+    elif is_long:
+        minimum_bar = bool(has_long and pytest_ran and (reached_done or heuristic_completed))
     else:
         minimum_bar = False
 
@@ -262,7 +285,8 @@ def run_mode(
     model, tokenizer = load(model_id)
     print("Model loaded.", flush=True)
 
-    enable_steering = mode in ("steering", "full_ladder")
+    enable_steering = mode in ("steering", "steering_always", "full_ladder")
+    steering_mode = "always_on" if mode == "steering_always" else "chi"
     enable_compaction = mode == "full_ladder"
     turn_log: list[dict[str, Any]] = []
 
@@ -286,6 +310,7 @@ def run_mode(
         auto_approve=auto_approve,
         enable_steering=enable_steering,
         enable_compaction=enable_compaction,
+        steering_mode=steering_mode,
         turn_log=turn_log,
     )
     try:
@@ -417,9 +442,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="TASK-044 steering + ladder integration test")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "steering", "full_ladder"],
+        choices=["baseline", "steering", "steering_always", "full_ladder"],
         default="baseline",
-        help="Intervention configuration for this run",
+        help="Intervention configuration. steering = CHI-triggered; steering_always = "
+        "steering on from turn 0 (control for the CHI-triggered policy)",
     )
     parser.add_argument(
         "--dir",
@@ -432,6 +458,12 @@ def main() -> None:
         "--task",
         default=TASK044_TASK,
         help="Override the task prompt used for the agent run",
+    )
+    parser.add_argument(
+        "--preset",
+        choices=["calculator", "expense", "long"],
+        default=None,
+        help="Use a built-in task (overrides --task)",
     )
     parser.add_argument(
         "--output-json",
@@ -457,6 +489,12 @@ def main() -> None:
         help="Only rebuild data/task044_comparison.png and data/task044_report.md from saved JSON (no model run)",
     )
     args = parser.parse_args()
+    if args.preset:
+        args.task = {
+            "calculator": TASK044_TASK,
+            "expense": EXPENSE_TASK,
+            "long": LONG_TASK,
+        }[args.preset]
 
     def _regenerate_plots_and_report() -> None:
         data_dir = root / "data"
@@ -499,7 +537,9 @@ def main() -> None:
     else:
         # TASK-047: output naming based on task type.
         tl = args.task.lower()
-        if "calculator" in tl:
+        if "library-management" in tl:
+            task_key = "long"
+        elif "calculator" in tl:
             task_key = "calc"
         elif "expense tracker" in tl:
             task_key = "expense"

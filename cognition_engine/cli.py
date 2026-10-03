@@ -11,6 +11,9 @@ Usage:
     # Resume interrupted agent session
     python -m cognition_engine agent --dir /tmp/test --resume
 
+    # Build steering vectors once (needed for --enable-steering)
+    python -m cognition_engine steering-build
+
     # Status for a working directory
     python -m cognition_engine status --dir /tmp/test
 """
@@ -24,6 +27,7 @@ from mlx_lm import generate, load
 from cognition_engine.agent import CognitionAgent
 from cognition_engine.chi import CHIMonitor
 from cognition_engine.memory import WorkingMemory
+from cognition_engine.escalation import build_escalator
 from cognition_engine.session import SessionManager
 
 
@@ -118,8 +122,16 @@ def run_agent(args: argparse.Namespace) -> None:
         working_dir=working_dir,
         auto_approve=args.auto_approve,
         enable_steering=args.enable_steering,
+        steering_mode=args.steering_mode,
+        escalator=build_escalator(args.escalate),
     )
     agent.run(max_turns=args.max_turns)
+
+
+def run_steering_build(args: argparse.Namespace) -> None:
+    from cognition_engine.steering.build import build_vectors
+
+    build_vectors(args.model, names=args.sets or None)
 
 
 def show_status(args: argparse.Namespace) -> None:
@@ -190,6 +202,34 @@ def main() -> None:
         help="Enable CHI-triggered activation steering (Level 2 intervention)",
     )
 
+    agent_parser.add_argument(
+        "--steering-mode",
+        choices=["chi", "always_on"],
+        default="chi",
+        help="chi: steer only while CHI is low (default); always_on: steer from turn 0",
+    )
+    agent_parser.add_argument(
+        "--escalate",
+        choices=["none", "anthropic"],
+        default="none",
+        help="Level 4: ask a stronger model for guidance when CHI < 0.3 "
+        "(anthropic needs ANTHROPIC_API_KEY; sends task + recent transcript)",
+    )
+
+    # Steering vectors
+    build_parser = subparsers.add_parser(
+        "steering-build",
+        help="Build steering vectors (needs the model; writes data/steering_vectors/)",
+    )
+    build_parser.add_argument(
+        "--model", default="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit"
+    )
+    build_parser.add_argument(
+        "--sets",
+        nargs="*",
+        help="Pair sets to build (default: task_focus tool_format code_coherence)",
+    )
+
     # Status
     status_parser = subparsers.add_parser("status", help="Show project status")
     status_parser.add_argument("--dir", default=".")
@@ -201,6 +241,9 @@ def main() -> None:
         return
     if args.command == "agent":
         run_agent(args)
+        return
+    if args.command == "steering-build":
+        run_steering_build(args)
         return
     if args.command == "status":
         show_status(args)
