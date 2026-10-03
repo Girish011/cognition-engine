@@ -2,8 +2,7 @@
 
 The question: **can a local LLM agent be corrected in the middle of execution, using signals
 read from the model's own internals?** This is what the experiments (Weeks 1-8, Qwen2.5-Coder-7B-Instruct
-4-bit on an M4 Pro) did and did not show. Raw run data is in [`../data`](../data); the
-day-by-day lab notebook is [`../.cofounder/SESSION_LOG.md`](../.cofounder/SESSION_LOG.md).
+4-bit on an M4 Pro) did and did not show. Raw run data is in [`../data`](../data).
 
 ## Summary
 

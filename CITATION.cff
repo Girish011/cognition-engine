@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+title: "Cognition Engine: mid-execution correction for local LLM agents"
+type: software
+license: MIT
+repository-code: "https://github.com/Girish011/cognition-engine"
+authors:
+  - alias: "Girish011"
